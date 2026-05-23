@@ -1,0 +1,364 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Portfolio Tracker</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh;padding:0}
+  h2.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  :root{--green:#3fb950;--red:#f85149;--yellow:#d29922;--blue:#58a6ff;--purple:#bc8cff;--bg1:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;--text1:#e6edf3;--text2:#8b949e;--text3:#6e7681}
+  .app{max-width:1100px;margin:0 auto;padding:24px 16px}
+  .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px}
+  .header h1{font-size:22px;font-weight:600;color:#e6edf3;letter-spacing:-0.3px}
+  .header-sub{font-size:13px;color:var(--text2);margin-top:2px}
+  .btn{padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;cursor:pointer;transition:background .15s;display:flex;align-items:center;gap:6px}
+  .btn:hover{background:#2d333b}
+  .btn.primary{background:#238636;border-color:#2ea043;color:#fff}
+  .btn.primary:hover{background:#2ea043}
+  .btn.danger{background:transparent;border-color:#f85149;color:#f85149}
+  .btn.danger:hover{background:rgba(248,81,73,.1)}
+  .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:28px}
+  .summary-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+  .summary-card .label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+  .summary-card .value{font-size:22px;font-weight:600;color:var(--text1)}
+  .summary-card .value.green{color:var(--green)}
+  .summary-card .value.red{color:var(--red)}
+  .stocks-grid{display:flex;flex-direction:column;gap:12px}
+  .stock-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;transition:border-color .15s}
+  .stock-card:hover{border-color:#444c56}
+  .stock-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .stock-left{display:flex;align-items:center;gap:12px}
+  .stock-avatar{width:40px;height:40px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--blue);flex-shrink:0}
+  .stock-name{font-size:15px;font-weight:600;color:var(--text1)}
+  .stock-exchange{font-size:11px;color:var(--text3);margin-top:2px}
+  .stock-price-block{text-align:right}
+  .current-price{font-size:20px;font-weight:700;color:var(--text1)}
+  .day-change{font-size:13px;margin-top:2px;font-weight:500}
+  .day-change.up{color:var(--green)}
+  .day-change.down{color:var(--red)}
+  .metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+  .metric{background:var(--bg3);border-radius:6px;padding:10px 12px}
+  .metric .m-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+  .metric .m-value{font-size:14px;font-weight:600;color:var(--text1)}
+  .metric .m-value.green{color:var(--green)}
+  .metric .m-value.red{color:var(--red)}
+  .metric .m-value.yellow{color:var(--yellow)}
+  .gtt-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500;background:rgba(210,153,34,.15);border:1px solid rgba(210,153,34,.3);color:var(--yellow)}
+  .no-gtt{font-size:12px;color:var(--text3)}
+  .stock-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+  .loading-pulse{color:var(--text3);font-size:12px;animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .modal{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+  .modal h3{font-size:17px;font-weight:600;margin-bottom:18px}
+  .form-group{margin-bottom:14px}
+  .form-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
+  .form-group input{width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);font-size:14px;outline:none}
+  .form-group input:focus{border-color:var(--blue)}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
+  .empty-state h3{font-size:18px;font-weight:500;margin-bottom:8px;color:var(--text1)}
+  .empty-state p{font-size:13px;line-height:1.6}
+  .refresh-btn{padding:6px 12px;font-size:12px}
+  .tag{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500}
+  .tag.buy{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.25)}
+  .tag.sell{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.25)}
+  .error-msg{font-size:11px;color:var(--red);margin-top:4px}
+  .note{font-size:11px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:16px;line-height:1.5}
+</style>
+</head>
+<body>
+<h2 class="sr-only">Personal stock portfolio tracker — manage holdings and view live prices for NSE/BSE stocks</h2>
+<div class="app" id="app">
+  <div class="header">
+    <div>
+      <div style="font-size:11px;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">My Portfolio</div>
+      <h1>Stock Tracker</h1>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn refresh-btn" id="refreshBtn" onclick="fetchAllPrices()">⟳ Refresh prices</button>
+      <button class="btn primary" onclick="openAddModal()">+ Add stock</button>
+    </div>
+  </div>
+  <div class="summary-grid" id="summaryGrid"></div>
+  <div class="stocks-grid" id="stocksGrid"></div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+  <div class="modal">
+    <h3 id="modalTitle">Add stock</h3>
+    <div class="note">⚡ Enter the NSE symbol (e.g. RELIANCE, TCS, INFY). Prices are fetched via Yahoo Finance (adds .NS suffix automatically).</div>
+    <div class="form-group">
+      <label>NSE Symbol *</label>
+      <input id="fSymbol" placeholder="e.g. RELIANCE" style="text-transform:uppercase"/>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Qty (shares) *</label>
+        <input id="fQty" type="number" placeholder="e.g. 10"/>
+      </div>
+      <div class="form-group">
+        <label>Avg buy price (₹) *</label>
+        <input id="fBuyPrice" type="number" placeholder="e.g. 2450.50"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Purchase date *</label>
+      <input id="fDate" type="date"/>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;font-weight:500">GTT Order (optional)</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>GTT trigger price (₹)</label>
+          <input id="fGttPrice" type="number" placeholder="e.g. 3000"/>
+        </div>
+        <div class="form-group">
+          <label>GTT type</label>
+          <select id="fGttType" style="width:100%;padding:8px 10px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:14px">
+            <option value="sell">Sell</option>
+            <option value="buy">Buy</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="formError" class="error-msg" style="display:none"></div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveStock()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'portfolio_v2';
+let stocks = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let prices = {};
+let editingId = null;
+
+function save(){localStorage.setItem(STORAGE_KEY, JSON.stringify(stocks));}
+
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
+
+function openAddModal(){
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'Add stock';
+  ['fSymbol','fQty','fBuyPrice','fDate','fGttPrice'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fGttType').value='sell';
+  document.getElementById('fSymbol').disabled = false;
+  document.getElementById('formError').style.display='none';
+  document.getElementById('modalOverlay').style.display='flex';
+}
+
+function openEditModal(id){
+  const s = stocks.find(x=>x.id===id);
+  if(!s) return;
+  editingId = id;
+  document.getElementById('modalTitle').textContent = 'Edit stock';
+  document.getElementById('fSymbol').value = s.symbol;
+  document.getElementById('fSymbol').disabled = true;
+  document.getElementById('fQty').value = s.qty;
+  document.getElementById('fBuyPrice').value = s.buyPrice;
+  document.getElementById('fDate').value = s.date;
+  document.getElementById('fGttPrice').value = s.gttPrice || '';
+  document.getElementById('fGttType').value = s.gttType || 'sell';
+  document.getElementById('formError').style.display='none';
+  document.getElementById('modalOverlay').style.display='flex';
+}
+
+function closeModal(){document.getElementById('modalOverlay').style.display='none';}
+
+function showError(msg){
+  const el = document.getElementById('formError');
+  el.textContent = msg;
+  el.style.display='block';
+}
+
+function saveStock(){
+  const symbol = document.getElementById('fSymbol').value.trim().toUpperCase();
+  const qty = parseFloat(document.getElementById('fQty').value);
+  const buyPrice = parseFloat(document.getElementById('fBuyPrice').value);
+  const date = document.getElementById('fDate').value;
+  const gttPrice = document.getElementById('fGttPrice').value ? parseFloat(document.getElementById('fGttPrice').value) : null;
+  const gttType = document.getElementById('fGttType').value;
+
+  if(!symbol) return showError('Symbol is required');
+  if(!qty || qty<=0) return showError('Valid quantity required');
+  if(!buyPrice || buyPrice<=0) return showError('Valid buy price required');
+  if(!date) return showError('Purchase date required');
+
+  if(editingId){
+    const idx = stocks.findIndex(x=>x.id===editingId);
+    stocks[idx] = {...stocks[idx], qty, buyPrice, date, gttPrice, gttType};
+  } else {
+    if(stocks.find(x=>x.symbol===symbol)) return showError('Symbol already added. Edit existing entry.');
+    stocks.push({id:uid(), symbol, qty, buyPrice, date, gttPrice, gttType, name:symbol});
+  }
+  save();
+  closeModal();
+  render();
+  fetchAllPrices();
+}
+
+function deleteStock(id){
+  if(!confirm('Remove this stock?')) return;
+  stocks = stocks.filter(x=>x.id!==id);
+  delete prices[id];
+  save();
+  render();
+}
+
+async function fetchPrice(symbol){
+  try{
+    const ticker = symbol+'.NS';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if(!result) return null;
+    const meta = result.meta;
+    return {
+      price: meta.regularMarketPrice,
+      prevClose: meta.previousClose || meta.chartPreviousClose,
+      name: meta.longName || meta.shortName || symbol,
+      currency: meta.currency
+    };
+  } catch(e){ return null; }
+}
+
+async function fetchAllPrices(){
+  const btn = document.getElementById('refreshBtn');
+  if(btn) btn.textContent = '⟳ Fetching...';
+  await Promise.all(stocks.map(async s=>{
+    const d = await fetchPrice(s.symbol);
+    if(d){
+      prices[s.id] = d;
+      if(d.name && d.name!==s.symbol){
+        const idx = stocks.findIndex(x=>x.id===s.id);
+        if(idx>=0) stocks[idx].name = d.name;
+      }
+    }
+  }));
+  save();
+  render();
+  if(btn) btn.textContent = '⟳ Refresh prices';
+}
+
+function fmt(n){return n!=null?('₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';}
+function fmtPct(n){return n!=null?(n>=0?'+':'')+n.toFixed(2)+'%':'—';}
+function pctClass(n){return n>0?'green':n<0?'red':'';}
+
+function render(){
+  renderSummary();
+  renderStocks();
+}
+
+function renderSummary(){
+  let totalInvested=0, totalCurrent=0, count=stocks.length, priced=0;
+  stocks.forEach(s=>{
+    const invested = s.qty * s.buyPrice;
+    totalInvested += invested;
+    const p = prices[s.id];
+    if(p){
+      totalCurrent += s.qty * p.price;
+      priced++;
+    }
+  });
+  const pnl = totalCurrent - totalInvested;
+  const pnlPct = totalInvested>0?(pnl/totalInvested)*100:0;
+  const el = document.getElementById('summaryGrid');
+  if(count===0){el.innerHTML='';return;}
+  el.innerHTML = `
+    <div class="summary-card"><div class="label">Holdings</div><div class="value">${count}</div></div>
+    <div class="summary-card"><div class="label">Invested</div><div class="value">${fmt(totalInvested)}</div></div>
+    <div class="summary-card"><div class="label">Current value</div><div class="value">${priced?fmt(totalCurrent):'—'}</div></div>
+    <div class="summary-card"><div class="label">Total P&L</div><div class="value ${pctClass(pnl)}">${priced?fmt(pnl):'—'} ${priced?'('+fmtPct(pnlPct)+')':''}</div></div>
+  `;
+}
+
+function renderStocks(){
+  const el = document.getElementById('stocksGrid');
+  if(stocks.length===0){
+    el.innerHTML = `<div class="empty-state"><h3>No stocks added yet</h3><p>Click "Add stock" to start tracking your Groww portfolio.<br/>Enter your NSE symbols, buy price, quantity and purchase date.</p></div>`;
+    return;
+  }
+  el.innerHTML = stocks.map(s=>{
+    const p = prices[s.id];
+    const invested = s.qty * s.buyPrice;
+    const currentVal = p ? s.qty * p.price : null;
+    const totalPnl = p ? currentVal - invested : null;
+    const totalPnlPct = p ? (totalPnl/invested)*100 : null;
+    const dayChange = p ? p.price - p.prevClose : null;
+    const dayChangePct = p ? (dayChange/p.prevClose)*100 : null;
+    const initials = s.symbol.slice(0,2);
+    const dateStr = s.date ? new Date(s.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+
+    return `
+    <div class="stock-card">
+      <div class="stock-top">
+        <div class="stock-left">
+          <div class="stock-avatar">${initials}</div>
+          <div>
+            <div class="stock-name">${s.symbol}</div>
+            <div class="stock-exchange" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name!==s.symbol?s.name:'NSE'}</div>
+          </div>
+        </div>
+        <div class="stock-price-block">
+          ${p
+            ? `<div class="current-price">${fmt(p.price)}</div>
+               <div class="day-change ${dayChangePct>=0?'up':'down'}">${dayChangePct>=0?'▲':'▼'} ${fmt(dayChange)} (${fmtPct(dayChangePct)}) today</div>`
+            : `<div class="loading-pulse">Fetching price...</div>`
+          }
+        </div>
+      </div>
+      <div class="metrics-row">
+        <div class="metric">
+          <div class="m-label">📅 Purchased on</div>
+          <div class="m-value">${dateStr}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">💰 Avg buy price</div>
+          <div class="m-value">${fmt(s.buyPrice)}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">📦 Qty</div>
+          <div class="m-value">${s.qty} shares</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">💼 Invested</div>
+          <div class="m-value">${fmt(invested)}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">📈 Total P&L</div>
+          <div class="m-value ${pctClass(totalPnl)}">
+            ${totalPnl!=null ? fmt(totalPnl) : '—'}
+            ${totalPnlPct!=null ? `<span style="font-size:12px;margin-left:4px">(${fmtPct(totalPnlPct)})</span>` : ''}
+          </div>
+        </div>
+        <div class="metric">
+          <div class="m-label">🎯 GTT order</div>
+          <div class="m-value">
+            ${s.gttPrice
+              ? `<div class="gtt-badge"><span>${s.gttType==='sell'?'SELL':'BUY'}</span> @ ${fmt(s.gttPrice)}</div>`
+              : `<span class="no-gtt">Not set</span>`
+            }
+          </div>
+        </div>
+      </div>
+      <div class="stock-actions">
+        <button class="btn" style="font-size:12px;padding:5px 10px" onclick="openEditModal('${s.id}')">✏️ Edit</button>
+        <button class="btn danger" style="font-size:12px;padding:5px 10px" onclick="deleteStock('${s.id}')">🗑 Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+render();
+fetchAllPrices();
+</script>
+</body>
+</html>
