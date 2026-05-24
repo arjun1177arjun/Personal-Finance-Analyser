@@ -420,19 +420,28 @@
 
             // Map tickers to correct schemas (appending ".NS" for Indian National Stock Exchange equities)
             const formattedSymbols = tickers.map(ticker => {
-              const registryMatch = StockRegistry.find(s => s.symbol.toUpperCase() === ticker.toUpperCase());
-              return (registryMatch && registryMatch.exchange === "NSE") ? `${ticker.toUpperCase()}.NS` : ticker.toUpperCase();
+              const upperTicker = ticker.toUpperCase();
+              const registryMatch = StockRegistry.find(s => s.symbol.toUpperCase() === upperTicker);
+              // If it's explicitly NASDAQ in registry, don't append .NS
+              if (registryMatch && registryMatch.exchange === "NASDAQ") {
+                return upperTicker;
+              }
+              // If it doesn't already have .NS and it's not NASDAQ, append .NS
+              if (!upperTicker.endsWith('.NS')) {
+                return `${upperTicker}.NS`;
+              }
+              return upperTicker;
             });
 
             const symbolsParam = formattedSymbols.join(",");
-            const apiUrl = `https://apidojo-yahoo-finance-v1.p.rapidapi.com/market/v2/get-quotes?region=IN&symbols=${symbolsParam}`;
+            const apiUrl = `https://yh-finance.p.rapidapi.com/market/v2/get-quotes?region=IN&symbols=${symbolsParam}`;
 
             try {
               setRefreshProgress("Requesting single-credit batch market quotes...");
               const response = await fetch(apiUrl, {
                 method: "GET",
                 headers: {
-                  "x-rapidapi-host": "apidojo-yahoo-finance-v1.p.rapidapi.com",
+                  "x-rapidapi-host": "yh-finance.p.rapidapi.com",
                   "x-rapidapi-key": resolvedKey
                 }
               });
@@ -458,12 +467,18 @@
                 tickers.forEach(ticker => {
                   const upperTicker = ticker.toUpperCase();
                   const registryMatch = StockRegistry.find(s => s.symbol.toUpperCase() === upperTicker);
-                  const expectedApiSymbol = (registryMatch && registryMatch.exchange === "NSE") ? `${upperTicker}.NS` : upperTicker;
+                  let expectedApiSymbol = upperTicker;
+
+                  if (registryMatch && registryMatch.exchange === "NASDAQ") {
+                    expectedApiSymbol = upperTicker;
+                  } else if (!upperTicker.endsWith('.NS')) {
+                    expectedApiSymbol = `${upperTicker}.NS`;
+                  }
 
                   // Perform match against both raw symbol and expected suffixed symbol safely
                   if (itemSymbol === expectedApiSymbol || itemSymbol === upperTicker) {
-                    const price = parseFloat(item.regularMarketPrice);
-                    const prevClose = parseFloat(item.regularMarketPreviousClose);
+                    const price = parseFloat(item.regularMarketPrice !== undefined ? item.regularMarketPrice : item.currentPrice);
+                    const prevClose = parseFloat(item.regularMarketPreviousClose !== undefined ? item.regularMarketPreviousClose : item.previousClose);
 
                     if (!isNaN(price)) {
                       normalizedQuotes[upperTicker] = {
@@ -2956,7 +2971,7 @@ TATAAML-TATSILV	TATSILV	INF277KA1984	BUY	404	9942.44	NSE	1300000063421395	10-02-
                           className={`w-full rounded-xl px-4 py-3 text-xs font-mono focus:outline-none ${themeStyles.input}`}
                         />
                         <p className="text-[11px] opacity-65 leading-relaxed">
-                          Quotes are fetched securely via the <span className="font-semibold text-emerald-500">apidojo-yahoo-finance-v1</span> endpoint. All ticker codes are compiled in batch format to save credit consumption. Key values are saved securely only inside your browser's private local storage.
+                          Quotes are fetched securely via the <span className="font-semibold text-emerald-500">yh-finance</span> endpoint. All ticker codes are compiled in batch format to save credit consumption. Key values are saved securely only inside your browser's private local storage.
                         </p>
                       </div>
 
