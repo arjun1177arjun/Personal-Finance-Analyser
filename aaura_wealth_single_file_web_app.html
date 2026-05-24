@@ -367,7 +367,7 @@
 
             // Conditionally append search grounding tool if user has it enabled (can be disabled to bypass 403 blocks)
             if (searchGrounding) {
-              payload.tools = [{ "google_search": {} }];
+              payload.tools = [{ "googleSearch": {} }];
             }
 
             try {
