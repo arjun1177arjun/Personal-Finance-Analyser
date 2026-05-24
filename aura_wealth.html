@@ -1,0 +1,3062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Wealth Portfolio Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    animation: {
+                        'fade-in-down': 'fadeInDown 0.3s ease-out forwards',
+                        'scale-up': 'scaleUp 0.25s ease-out forwards',
+                        'fade-in': 'fadeIn 0.35s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeInDown: {
+                            '0%': { opacity: '0', transform: 'translateY(-10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        scaleUp: {
+                            '0%': { opacity: '0', transform: 'scale(0.95)' },
+                            '100%': { opacity: '1', transform: 'scale(1)' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="transition-colors duration-200">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // GLOBAL MARKET DATA API KEY CONFIGURATION (Replace with your RapidAPI key)
+        const API_KEY = 'PLACEHOLDER';
+
+        const StockRegistry = [
+          { symbol: "RELIANCE", name: "Reliance Industries Ltd.", exchange: "NSE" },
+          { symbol: "TCS", name: "Tata Consultancy Services Ltd.", exchange: "NSE" },
+          { symbol: "INFY", name: "Infosys Ltd.", exchange: "NSE" },
+          { symbol: "HDFCBANK", name: "HDFC Bank Ltd.", exchange: "NSE" },
+          { symbol: "ICICIBANK", name: "ICICI Bank Ltd.", exchange: "NSE" },
+          { symbol: "TATAMOTORS", name: "Tata Motors Ltd.", exchange: "NSE" },
+          { symbol: "AAPL", name: "Apple Inc.", exchange: "NASDAQ" },
+          { symbol: "MSFT", name: "Microsoft Corporation", exchange: "NASDAQ" },
+          { symbol: "GOOG", name: "Alphabet Inc.", exchange: "NASDAQ" },
+          { symbol: "TSLA", name: "Tesla, Inc.", exchange: "NASDAQ" },
+          { symbol: "NVDA", name: "NVIDIA Corporation", exchange: "NASDAQ" },
+          { symbol: "AMZN", name: "Amazon.com, Inc.", exchange: "NASDAQ" },
+          { symbol: "META", name: "Meta Platforms, Inc.", exchange: "NASDAQ" },
+          { symbol: "SBI", name: "State Bank of India", exchange: "NSE" },
+          { symbol: "ITC", name: "ITC Ltd.", exchange: "NSE" },
+          { symbol: "BHARTIARTL", name: "Bharti Airtel Ltd.", exchange: "NSE" },
+          { symbol: "HINDUNILVR", name: "Hindustan Unilever Ltd.", exchange: "NSE" },
+          { symbol: "LT", name: "Larsen & Toubro Ltd.", exchange: "NSE" },
+          { symbol: "AXISBANK", name: "Axis Bank Ltd.", exchange: "NSE" },
+          { symbol: "WIPRO", name: "Wipro Ltd.", exchange: "NSE" },
+          { symbol: "COALINDIA", name: "Coal India Ltd.", exchange: "NSE" },
+          { symbol: "NFLX", name: "Netflix, Inc.", exchange: "NASDAQ" },
+          { symbol: "AMD", name: "Advanced Micro Devices, Inc.", exchange: "NASDAQ" },
+          { symbol: "HINDZINC", name: "Hindustan Zinc Ltd.", exchange: "NSE" },
+          { symbol: "TATAGOLD", name: "Tata Consumer Products Gold", exchange: "NSE" },
+          { symbol: "TATSILV", name: "Tata Consumer Products Silver", exchange: "NSE" }
+        ];
+
+        // Format Date to legible string
+        function formatDateString(dateStr) {
+          if (!dateStr) return "N/A";
+          const dateObj = new Date(dateStr);
+          if (isNaN(dateObj.getTime())) return dateStr;
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          return `${day}-${months[dateObj.getMonth()]}-${dateObj.getFullYear()}`;
+        }
+
+        // Calculates exact holding period relative to current simulated date of May 24, 2026
+        function getHoldingDuration(dateStr) {
+          if (!dateStr) return "N/A";
+          const startDate = new Date(dateStr);
+          const endDate = new Date("2026-05-24"); // May 24, 2026 Context
+          if (isNaN(startDate.getTime())) return "N/A";
+          
+          let years = endDate.getFullYear() - startDate.getFullYear();
+          let months = endDate.getMonth() - startDate.getMonth();
+          let days = endDate.getDate() - startDate.getDate();
+          
+          if (days < 0) {
+            months -= 1;
+            const prevMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 0);
+            days += prevMonth.getDate();
+          }
+          if (months < 0) {
+            years -= 1;
+            months += 12;
+          }
+          
+          const parts = [];
+          if (years > 0) parts.push(`${years}y`);
+          if (months > 0) parts.push(`${months}m`);
+          if (days > 0 && years === 0 && months === 0) parts.push(`${days}d`);
+          
+          if (parts.length === 0) return "Today";
+          return parts.join(" ");
+        }
+
+        // Formats currency to rounded integer INR standard
+        function formatINR(number, roundToInteger = true) {
+          if (number === null || number === undefined || isNaN(number)) return "₹0";
+          const val = roundToInteger ? Math.round(number) : number;
+          return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            maximumFractionDigits: roundToInteger ? 0 : 2
+          }).format(val);
+        }
+
+        // Formats percentages rounded to nearest integer or 0.5% boundary
+        // Using standard LaTeX math formulas formatting internally for operations representation
+        function formatPercent(value) {
+          if (value === null || value === undefined || isNaN(value)) return "0%";
+          const rounded = Math.round(value * 2) / 2;
+          const sign = rounded > 0 ? '+' : '';
+          const decimals = rounded % 1 === 0 ? 0 : 1;
+          return `${sign}${rounded.toFixed(decimals)}%`;
+        }
+
+        function generateId() {
+          return Math.random().toString(36).substring(2, 11);
+        }
+
+        const DefaultProfiles = [
+          {
+            id: "prof-nikita",
+            name: "Nikita",
+            initials: "NI",
+            realizedPnL: 8250.00,
+            synced: false,
+            lastRefreshed: null,
+            holdings: {
+              "RELIANCE": {
+                ticker: "RELIANCE",
+                name: "Reliance Industries Ltd.",
+                buyLots: [
+                  { id: "lot-r1", date: "2025-01-10", price: 2420.00, qty: 15 },
+                  { id: "lot-r2", date: "2025-03-15", price: 2510.00, qty: 10 }
+                ],
+                gttPrice: 2800.00,
+                price: null,
+                prevClose: null
+              },
+              "TCS": {
+                ticker: "TCS",
+                name: "Tata Consultancy Services Ltd.",
+                buyLots: [
+                  { id: "lot-t1", date: "2024-11-20", price: 3850.00, qty: 8 }
+                ],
+                gttPrice: null,
+                price: null,
+                prevClose: null
+              },
+              "AAPL": {
+                ticker: "AAPL",
+                name: "Apple Inc.",
+                buyLots: [
+                  { id: "lot-a1", date: "2025-02-05", price: 175.00, qty: 20 }
+                ],
+                gttPrice: 210.00,
+                price: null,
+                prevClose: null
+              }
+            },
+            logs: [
+              { id: "log-1", date: "2024-11-20T10:00:00.000Z", type: "SYSTEM", text: "Profile initiated with default tracker state." },
+              { id: "log-2", date: "2024-11-20T10:05:00.000Z", type: "BUY", text: "Acquired 8 lots of TCS at ₹3850.00", amount: 30800 },
+              { id: "log-3", date: "2025-01-10T14:30:00.000Z", type: "BUY", text: "Acquired 15 lots of RELIANCE at ₹2420.00", amount: 36300 },
+              { id: "log-4", date: "2025-02-05T15:15:00.000Z", type: "BUY", text: "Acquired 20 lots of AAPL at ₹175.00", amount: 3500 },
+              { id: "log-5", date: "2025-03-15T09:45:00.000Z", type: "BUY", text: "Acquired 10 lots of RELIANCE at ₹2510.00", amount: 25100 }
+            ]
+          },
+          {
+            id: "prof-aarav",
+            name: "Aarav",
+            initials: "AR",
+            realizedPnL: 0.00,
+            synced: false,
+            lastRefreshed: null,
+            holdings: {
+              "TSLA": {
+                ticker: "TSLA",
+                name: "Tesla, Inc.",
+                buyLots: [
+                  { id: "lot-ts1", date: "2024-12-01", price: 220.00, qty: 12 },
+                  { id: "lot-ts2", date: "2025-02-18", price: 195.00, qty: 8 }
+                ],
+                gttPrice: 260.00,
+                price: null,
+                prevClose: null
+              },
+              "INFY": {
+                ticker: "INFY",
+                name: "Infosys Ltd.",
+                buyLots: [
+                  { id: "lot-inf1", date: "2025-04-10", price: 1420.00, qty: 30 }
+                ],
+                gttPrice: null,
+                price: null,
+                prevClose: null
+              }
+            },
+            logs: [
+              { id: "log-a1", date: "2024-12-01T10:00:00.000Z", type: "SYSTEM", text: "Profile initiated with default tracker state." },
+              { id: "log-a2", date: "2024-12-01T10:15:00.000Z", type: "BUY", text: "Acquired 12 lots of TSLA at ₹220.00", amount: 2640 },
+              { id: "log-a3", date: "2025-02-18T11:00:00.000Z", type: "BUY", text: "Acquired 8 lots of TSLA at ₹195.00", amount: 1560 },
+              { id: "log-a4", date: "2025-04-10T15:20:00.000Z", type: "BUY", text: "Acquired 30 lots of INFY at ₹1420.00", amount: 42600 }
+            ]
+          }
+        ];
+
+        function App() {
+          const [profiles, setProfiles] = useState(() => {
+            const cached = localStorage.getItem('AURA_WEALTH_PROFILES');
+            return cached ? JSON.parse(cached) : DefaultProfiles;
+          });
+
+          const [activeProfileId, setActiveProfileId] = useState(() => {
+            const cachedActive = localStorage.getItem('AURA_WEALTH_ACTIVE_ID');
+            if (cachedActive && cachedActive !== "undefined") return cachedActive;
+            return DefaultProfiles[0].id;
+          });
+
+          const [theme, setTheme] = useState(() => {
+            const cachedTheme = localStorage.getItem('AURA_THEME');
+            return cachedTheme ? cachedTheme : 'dark';
+          });
+
+          const [customApiKey, setCustomApiKey] = useState(() => {
+            return localStorage.getItem('AURA_RAPIDAPI_KEY') || "";
+          });
+
+          const [viewState, setViewState] = useState('DASHBOARD'); 
+          const [apiLogs, setApiLogs] = useState([]);
+          const [showAddStockModal, setShowAddStockModal] = useState(false);
+          const [showEditStockModal, setShowEditStockModal] = useState(false);
+          const [showSellStockModal, setShowSellStockModal] = useState(false);
+          const [showProfileCreateModal, setShowProfileCreateModal] = useState(false);
+          const [showImportExportModal, setShowImportExportModal] = useState(false);
+          const [showApiSettingsModal, setShowApiSettingsModal] = useState(false);
+          const [showDebugConsole, setShowDebugConsole] = useState(false);
+          const [showRealizedSalesModal, setShowRealizedSalesModal] = useState(false);
+          
+          // Excel paste-importer Modal states
+          const [showExcelImportModal, setShowExcelImportModal] = useState(false);
+          const [excelPasteText, setExcelPasteText] = useState("");
+          const [excelOverwriteMode, setExcelOverwriteMode] = useState(false);
+          const [showExcelSuccessScreen, setShowExcelSuccessScreen] = useState(false);
+          const [excelReport, setExcelReport] = useState(null);
+
+          const [isRefreshing, setIsRefreshing] = useState(false);
+          const [refreshProgress, setRefreshProgress] = useState("");
+          const [selectedHoldingForSell, setSelectedHoldingForSell] = useState(null);
+          const [selectedHoldingForEdit, setSelectedHoldingForEdit] = useState(null);
+          const [showApiErrorModal, setShowApiErrorModal] = useState(false);
+          const [apiErrorMessage, setApiErrorMessage] = useState("");
+          const [importJsonText, setImportJsonText] = useState("");
+          
+          const [logsLimit, setLogsLimit] = useState(5);
+          const [syncRelativeTimeText, setSyncRelativeTimeText] = useState("");
+
+          const [toast, setToast] = useState(null);
+          const showToast = (message, type = 'success') => {
+            setToast({ message, type });
+            setTimeout(() => setToast(null), 4000);
+          };
+
+          useEffect(() => {
+            localStorage.setItem('AURA_WEALTH_PROFILES', JSON.stringify(profiles));
+          }, [profiles]);
+
+          useEffect(() => {
+            localStorage.setItem('AURA_WEALTH_ACTIVE_ID', activeProfileId);
+          }, [activeProfileId]);
+
+          useEffect(() => {
+            localStorage.setItem('AURA_THEME', theme);
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+          }, [theme]);
+
+          useEffect(() => {
+            localStorage.setItem('AURA_RAPIDAPI_KEY', customApiKey);
+          }, [customApiKey]);
+
+          const activeProfile = useMemo(() => {
+            return profiles.find(p => p.id === activeProfileId) || profiles[0] || null;
+          }, [profiles, activeProfileId]);
+
+          // Live dynamic relative duration since the last sync
+          useEffect(() => {
+            const calculateRelativeTime = () => {
+              if (!activeProfile || !activeProfile.lastRefreshed) {
+                setSyncRelativeTimeText("Never synced");
+                return;
+              }
+              const lastRef = new Date(activeProfile.lastRefreshed);
+              const now = new Date();
+              const diffMs = now - lastRef;
+              const diffSecs = Math.floor(diffMs / 1000);
+
+              if (diffSecs < 10) {
+                setSyncRelativeTimeText("Synced just now");
+              } else if (diffSecs < 60) {
+                setSyncRelativeTimeText(`Synced ${diffSecs}s ago`);
+              } else {
+                const diffMins = Math.floor(diffSecs / 60);
+                if (diffMins < 60) {
+                  setSyncRelativeTimeText(`Synced ${diffMins}m ago`);
+                } else {
+                  const diffHours = Math.floor(diffMins / 60);
+                  setSyncRelativeTimeText(`Synced ${diffHours}h ${diffMins % 60}m ago`);
+                }
+              }
+            };
+
+            calculateRelativeTime();
+            const interval = setInterval(calculateRelativeTime, 10000);
+            return () => clearInterval(interval);
+          }, [activeProfile, activeProfile?.lastRefreshed]);
+
+          const [searchQuery, setSearchQuery] = useState("");
+          const [suggestions, setSuggestions] = useState([]);
+          const [selectedStock, setSelectedStock] = useState(null);
+
+          const [buyPrice, setBuyPrice] = useState("");
+          const [buyQty, setBuyQty] = useState("");
+          const [buyDate, setBuyDate] = useState(() => new Date().toISOString().split('T')[0]);
+          const [gttTrigger, setGttTrigger] = useState("");
+          const [customGttPercent, setCustomGttPercent] = useState("");
+
+          const [editingGtt, setEditingGtt] = useState("");
+          const [editingLots, setEditingLots] = useState([]);
+          const [editCustomGttPercent, setEditCustomGttPercent] = useState("");
+
+          const [sellPrice, setSellPrice] = useState("");
+          const [sellQty, setSellQty] = useState("");
+          const [sellDate, setSellDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+          const [newProfileName, setNewProfileName] = useState("");
+
+          const handlePercentGttApply = (percent, priceBasis, isEditMode = false) => {
+            const priceVal = parseFloat(priceBasis);
+            if (isNaN(priceVal) || priceVal <= 0) {
+              showToast("Please specify a valid buy price first", "error");
+              return;
+            }
+            const calculated = (priceVal * (1 + percent / 100)).toFixed(2);
+            if (isEditMode) {
+              setEditingGtt(calculated);
+            } else {
+              setGttTrigger(calculated);
+            }
+          };
+
+          useEffect(() => {
+            if (searchQuery.trim().length < 2) {
+              setSuggestions([]);
+              return;
+            }
+
+            const handler = setTimeout(() => {
+              const filtered = StockRegistry.filter(s =>
+                s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                s.name.toLowerCase().includes(searchQuery.toLowerCase())
+              );
+              setSuggestions(filtered);
+            }, 300);
+
+            return () => clearTimeout(handler);
+          }, [searchQuery]);
+
+          // RAPIDAPI Stock Market Provider Integration Module
+          const fetchMarketPrices = async (tickers) => {
+            if (tickers.length === 0) return {};
+            
+            const timestamp = new Date().toLocaleTimeString();
+            addConsoleLog(`[${timestamp}] Initiating RapidAPI Quotes Query for: ${tickers.join(', ')}`);
+            setRefreshProgress("Initializing secure connection to RapidAPI gateway...");
+
+            // Resolve RapidAPI key from constant first, fallback to user input
+            const resolvedKey = (typeof API_KEY !== 'undefined' && API_KEY !== 'PLACEHOLDER' && API_KEY.trim() !== '') 
+              ? API_KEY.trim() 
+              : customApiKey.trim();
+
+            if (!resolvedKey) {
+              throw new Error("API Connection Key is missing. Please configure it inside the HTML script constants or directly via 'API Config' drawer.");
+            }
+
+            // Map tickers to correct schemas (appending ".NS" for Indian National Stock Exchange equities)
+            const formattedSymbols = tickers.map(ticker => {
+              const registryMatch = StockRegistry.find(s => s.symbol.toUpperCase() === ticker.toUpperCase());
+              return (registryMatch && registryMatch.exchange === "NSE") ? `${ticker.toUpperCase()}.NS` : ticker.toUpperCase();
+            });
+
+            const symbolsParam = formattedSymbols.join(",");
+            const apiUrl = `https://apidojo-yahoo-finance-v1.p.rapidapi.com/market/v2/get-quotes?region=IN&symbols=${symbolsParam}`;
+
+            try {
+              setRefreshProgress("Requesting single-credit batch market quotes...");
+              const response = await fetch(apiUrl, {
+                method: "GET",
+                headers: {
+                  "x-rapidapi-host": "apidojo-yahoo-finance-v1.p.rapidapi.com",
+                  "x-rapidapi-key": resolvedKey
+                }
+              });
+
+              if (!response.ok) {
+                throw new Error(`RapidAPI Server Exception. Connection returned HTTP Status Code: ${response.status}`);
+              }
+
+              const data = await response.json();
+
+              if (!data.quoteResponse || !data.quoteResponse.result) {
+                throw new Error("Unexpected payload structure returned from Yahoo Finance API engine.");
+              }
+
+              addConsoleLog(`[${new Date().toLocaleTimeString()}] Live RapidAPI Batch Quote Payload Trace`, JSON.stringify(data, null, 2));
+
+              const normalizedQuotes = {};
+
+              data.quoteResponse.result.forEach(item => {
+                if (!item || !item.symbol) return;
+                const itemSymbol = item.symbol.toUpperCase();
+
+                tickers.forEach(ticker => {
+                  const upperTicker = ticker.toUpperCase();
+                  const registryMatch = StockRegistry.find(s => s.symbol.toUpperCase() === upperTicker);
+                  const expectedApiSymbol = (registryMatch && registryMatch.exchange === "NSE") ? `${upperTicker}.NS` : upperTicker;
+
+                  // Perform match against both raw symbol and expected suffixed symbol safely
+                  if (itemSymbol === expectedApiSymbol || itemSymbol === upperTicker) {
+                    const price = parseFloat(item.regularMarketPrice);
+                    const prevClose = parseFloat(item.regularMarketPreviousClose);
+
+                    if (!isNaN(price)) {
+                      normalizedQuotes[upperTicker] = {
+                        price: price,
+                        prevClose: isNaN(prevClose) ? price * 0.98 : prevClose
+                      };
+                    }
+                  }
+                });
+              });
+
+              return normalizedQuotes;
+
+            } catch (err) {
+              addConsoleLog(`[${new Date().toLocaleTimeString()}] RapidAPI Transaction Failure`, err.message);
+              throw err;
+            }
+          };
+
+          const handleManualRefresh = async () => {
+            if (!activeProfile || Object.keys(activeProfile.holdings).length === 0) {
+              showToast("No active positions to synchronize.", "error");
+              return;
+            }
+
+            setIsRefreshing(true);
+            const tickers = Object.keys(activeProfile.holdings);
+            
+            try {
+              const marketQuotes = await fetchMarketPrices(tickers);
+              
+              setProfiles(prevProfiles => {
+                return prevProfiles.map(p => {
+                  if (p.id !== activeProfileId) return p;
+
+                  const updatedHoldings = { ...p.holdings };
+                  let updatedCount = 0;
+
+                  tickers.forEach(symbol => {
+                    const quote = marketQuotes[symbol] || marketQuotes[symbol.toUpperCase()];
+                    if (quote && quote.price) {
+                      updatedHoldings[symbol] = {
+                        ...updatedHoldings[symbol],
+                        price: Number(quote.price),
+                        prevClose: quote.prevClose ? Number(quote.prevClose) : Number(quote.price * 0.98),
+                      };
+                      updatedCount++;
+                    }
+                  });
+
+                  const newLog = {
+                    id: generateId(),
+                    date: new Date().toISOString(),
+                    type: "SYSTEM",
+                    text: `Synchronized market data: ${updatedCount}/${tickers.length} tickers updated under single RapidAPI credit usage.`,
+                  };
+
+                  return {
+                    ...p,
+                    holdings: updatedHoldings,
+                    synced: true,
+                    lastRefreshed: new Date().toISOString(),
+                    logs: [newLog, ...p.logs]
+                  };
+                });
+              });
+
+              showToast("Quotes updated via RapidAPI batch integration!", "success");
+            } catch (error) {
+              console.error(error);
+              setApiErrorMessage(error.message || "Failed to establish synchronization with RapidAPI.");
+              setShowApiErrorModal(true);
+            } finally {
+              setIsRefreshing(false);
+              setRefreshProgress("");
+            }
+          };
+
+          const handleOfflineSimulatorBypass = () => {
+            if (!activeProfile) return;
+            setIsRefreshing(true);
+            setRefreshProgress("Simulating live quotes mapping...");
+
+            setTimeout(() => {
+              setProfiles(prevProfiles => {
+                return prevProfiles.map(p => {
+                  if (p.id !== activeProfileId) return p;
+
+                  const updatedHoldings = { ...p.holdings };
+                  Object.keys(updatedHoldings).forEach(symbol => {
+                    const lots = updatedHoldings[symbol].buyLots;
+                    const avgCost = lots.reduce((acc, lot) => acc + lot.price, 0) / (lots.length || 1);
+                    const currentPrice = Number((avgCost * (1 + (Math.random() * 0.25 - 0.08))).toFixed(2));
+                    const prevClose = Number((currentPrice * (1 + (Math.random() * 0.04 - 0.02))).toFixed(2));
+
+                    updatedHoldings[symbol] = {
+                      ...updatedHoldings[symbol],
+                      price: currentPrice,
+                      prevClose: prevClose
+                    };
+                  });
+
+                  const newLog = {
+                    id: generateId(),
+                    date: new Date().toISOString(),
+                    type: "SYSTEM",
+                    text: "Prices updated successfully via Simulated Local Engine."
+                  };
+
+                  return {
+                    ...p,
+                    holdings: updatedHoldings,
+                    synced: true,
+                    lastRefreshed: new Date().toISOString(),
+                    logs: [newLog, ...p.logs]
+                  };
+                });
+              });
+
+              setIsRefreshing(false);
+              setRefreshProgress("");
+              setShowApiErrorModal(false);
+              showToast("Simulation complete. Offline prices generated.", "success");
+            }, 1000);
+          };
+
+          const addConsoleLog = (title, message = "") => {
+            setApiLogs(prev => [
+              { id: generateId(), title, message: typeof message === 'object' ? JSON.stringify(message, null, 2) : message },
+              ...prev
+            ]);
+          };
+
+          // Metrics calculations (all currency output calculations formatted elegantly)
+          const metrics = useMemo(() => {
+            if (!activeProfile) {
+              return { activeHoldingsCount: 0, totalCostBasis: 0, totalCurrentValue: 0, absolutePnL: 0, percentPnL: 0, isSynced: false };
+            }
+
+            let activeHoldingsCount = 0;
+            let totalCostBasis = 0;
+            let totalCurrentValue = 0;
+            let isSynced = activeProfile.synced;
+
+            Object.values(activeProfile.holdings).forEach(holding => {
+              const activeQty = holding.buyLots.reduce((acc, l) => acc + l.qty, 0);
+              if (activeQty > 0) {
+                activeHoldingsCount++;
+                const costBasis = holding.buyLots.reduce((acc, l) => acc + (l.qty * l.price), 0);
+                totalCostBasis += costBasis;
+
+                if (isSynced && holding.price !== null) {
+                  totalCurrentValue += (activeQty * holding.price);
+                }
+              }
+            });
+
+            const absolutePnL = totalCurrentValue - totalCostBasis;
+            const percentPnL = totalCostBasis > 0 ? (absolutePnL / totalCostBasis) * 100 : 0;
+
+            return {
+              activeHoldingsCount,
+              totalCostBasis,
+              totalCurrentValue: isSynced ? totalCurrentValue : null,
+              absolutePnL,
+              percentPnL,
+              isSynced
+            };
+          }, [activeProfile]);
+
+          // Parses realized sales list out of SELL transactions
+          const realizedSales = useMemo(() => {
+            if (!activeProfile) return [];
+            const salesMap = {};
+            
+            const sellLogs = [...activeProfile.logs]
+              .filter(log => log.type === "SELL")
+              .reverse();
+
+            sellLogs.forEach(log => {
+              let ticker = "";
+              let gainLoss = 0;
+              let volume = log.amount || 0;
+
+              if (log.revertStockState) {
+                ticker = log.revertStockState.ticker;
+                gainLoss = log.revertStockState.realizedPnLDiff || 0;
+              } else {
+                const tickerMatch = log.text.match(/shares of ([A-Z0-9]+)/i);
+                if (tickerMatch) ticker = tickerMatch[1].toUpperCase();
+
+                const gainMatch = log.text.match(/Gain:\s*₹?(-?\d+\.?\d*)/i);
+                if (gainMatch) {
+                  gainLoss = parseFloat(gainMatch[1]);
+                }
+              }
+
+              if (ticker) {
+                if (!salesMap[ticker]) {
+                  salesMap[ticker] = {
+                    ticker,
+                    realizedPnL: 0,
+                    totalVolume: 0,
+                    salesCount: 0
+                  };
+                }
+                salesMap[ticker].realizedPnL += gainLoss;
+                salesMap[ticker].totalVolume += volume;
+                salesMap[ticker].salesCount += 1;
+              }
+            });
+
+            return Object.values(salesMap);
+          }, [activeProfile]);
+
+          const handleOpenEditModal = (ticker) => {
+            const holding = activeProfile.holdings[ticker];
+            if (!holding) return;
+            setSelectedHoldingForEdit(ticker);
+            setEditingGtt(holding.gttPrice !== null ? holding.gttPrice.toString() : "");
+            setEditingLots(holding.buyLots.map(lot => ({ ...lot })));
+            setEditCustomGttPercent("");
+            setShowEditStockModal(true);
+          };
+
+          const handleEditLotChange = (id, field, value) => {
+            setEditingLots(prev =>
+              prev.map(lot => (lot.id === id ? { ...lot, [field]: value } : lot))
+            );
+          };
+
+          const handleDeleteEditLot = (id) => {
+            setEditingLots(prev => prev.filter(lot => lot.id !== id));
+          };
+
+          const handleAddEditLot = () => {
+            const newLot = {
+              id: generateId(),
+              date: new Date().toISOString().split('T')[0],
+              price: 0,
+              qty: 0
+            };
+            setEditingLots(prev => [...prev, newLot]);
+          };
+
+          const saveEditedStock = (e) => {
+            e.preventDefault();
+            if (!selectedHoldingForEdit) return;
+
+            const cleanedLots = editingLots.map(lot => ({
+              ...lot,
+              price: parseFloat(lot.price),
+              qty: parseInt(lot.qty, 10)
+            })).filter(lot => !isNaN(lot.price) && lot.price > 0 && !isNaN(lot.qty) && lot.qty > 0);
+
+            const gttVal = editingGtt.trim() !== "" ? parseFloat(editingGtt) : null;
+
+            setProfiles(prevProfiles => {
+              return prevProfiles.map(p => {
+                if (p.id !== activeProfileId) return p;
+
+                const updatedHoldings = { ...p.holdings };
+                if (cleanedLots.length === 0) {
+                  delete updatedHoldings[selectedHoldingForEdit];
+                } else {
+                  updatedHoldings[selectedHoldingForEdit] = {
+                    ...updatedHoldings[selectedHoldingForEdit],
+                    buyLots: cleanedLots,
+                    gttPrice: gttVal
+                  };
+                }
+
+                const newLog = {
+                  id: generateId(),
+                  date: new Date().toISOString(),
+                  type: "SYSTEM",
+                  text: `Manually modified assets layout & GTT rules for ${selectedHoldingForEdit}.`
+                };
+
+                return {
+                  ...p,
+                  holdings: updatedHoldings,
+                  logs: [newLog, ...p.logs],
+                  synced: false 
+                };
+              });
+            });
+
+            setShowEditStockModal(false);
+            setSelectedHoldingForEdit(null);
+            showToast(`Asset details updated for ${selectedHoldingForEdit}!`, "success");
+          };
+
+          // Strict chronological First-In First-Out (FIFO) Liquidation Engine
+          const executeFifoSell = (e) => {
+            e.preventDefault();
+            if (!selectedHoldingForSell) return;
+
+            const qtyToSell = parseInt(sellQty, 10);
+            const pricePerShare = parseFloat(sellPrice);
+            const sellDateStr = sellDate;
+
+            if (qtyToSell <= 0 || isNaN(qtyToSell) || pricePerShare <= 0 || isNaN(pricePerShare)) {
+              showToast("Please input valid trade metrics.", "error");
+              return;
+            }
+
+            const currentHolding = activeProfile.holdings[selectedHoldingForSell];
+            const totalOwnedShares = currentHolding.buyLots.reduce((acc, l) => acc + l.qty, 0);
+
+            if (qtyToSell > totalOwnedShares) {
+              showToast(`Insufficient quantity. You hold ${totalOwnedShares} shares of ${selectedHoldingForSell}.`, "error");
+              return;
+            }
+
+            const originalBuyLotsBeforeSale = currentHolding.buyLots.map(lot => ({ ...lot }));
+
+            setProfiles(prevProfiles => {
+              return prevProfiles.map(p => {
+                if (p.id !== activeProfileId) return p;
+
+                const updatedHoldings = { ...p.holdings };
+                const originalLots = [...updatedHoldings[selectedHoldingForSell].buyLots];
+                originalLots.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                let remainingSellQty = qtyToSell;
+                let realizedGainLoss = 0;
+                const modifiedLots = [];
+
+                for (let lot of originalLots) {
+                  if (remainingSellQty <= 0) {
+                    modifiedLots.push(lot);
+                    continue;
+                  }
+
+                  if (lot.qty <= remainingSellQty) {
+                    realizedGainLoss += (pricePerShare - lot.price) * lot.qty;
+                    remainingSellQty -= lot.qty;
+                  } else {
+                    realizedGainLoss += (pricePerShare - lot.price) * remainingSellQty;
+                    modifiedLots.push({
+                      ...lot,
+                      qty: lot.qty - remainingSellQty
+                    });
+                    remainingSellQty = 0;
+                  }
+                }
+
+                const activeRemainingQty = modifiedLots.reduce((acc, l) => acc + l.qty, 0);
+
+                const originalPrice = updatedHoldings[selectedHoldingForSell].price;
+                const originalPrevClose = updatedHoldings[selectedHoldingForSell].prevClose;
+                const originalGttPrice = updatedHoldings[selectedHoldingForSell].gttPrice;
+
+                if (activeRemainingQty === 0) {
+                  delete updatedHoldings[selectedHoldingForSell];
+                } else {
+                  updatedHoldings[selectedHoldingForSell] = {
+                    ...updatedHoldings[selectedHoldingForSell],
+                    buyLots: modifiedLots
+                  };
+                }
+
+                const newLog = {
+                  id: generateId(),
+                  date: new Date(sellDateStr).toISOString(),
+                  type: "SELL",
+                  text: `Executed FIFO Sell: Sold ${qtyToSell} shares of ${selectedHoldingForSell} at ₹${pricePerShare.toFixed(2)} (Gain: ₹${realizedGainLoss.toFixed(2)}).`,
+                  amount: qtyToSell * pricePerShare,
+                  revertStockState: {
+                    ticker: selectedHoldingForSell,
+                    buyLots: originalBuyLotsBeforeSale,
+                    realizedPnLDiff: realizedGainLoss,
+                    price: originalPrice,
+                    prevClose: originalPrevClose,
+                    gttPrice: originalGttPrice
+                  }
+                };
+
+                return {
+                  ...p,
+                  realizedPnL: p.realizedPnL + realizedGainLoss,
+                  holdings: updatedHoldings,
+                  logs: [newLog, ...p.logs]
+                };
+              });
+            });
+
+            setShowSellStockModal(false);
+            setSelectedHoldingForSell(null);
+            setSellQty("");
+            setSellPrice("");
+            showToast(`FIFO Sales Order executed successfully!`, "success");
+          };
+
+          const handleAddStockSubmit = (e) => {
+            e.preventDefault();
+
+            let tickerSymbol = selectedStock ? selectedStock.symbol : searchQuery.toUpperCase().trim();
+            let companyName = selectedStock ? selectedStock.name : searchQuery.trim() || tickerSymbol;
+
+            if (!tickerSymbol) {
+              showToast("Please provide or select an active ticker.", "error");
+              return;
+            }
+
+            const price = Number(buyPrice);
+            const qty = Number(buyQty);
+            const dateStr = buyDate;
+            const gttVal = gttTrigger ? Number(gttTrigger) : null;
+
+            if (price <= 0 || isNaN(price) || qty <= 0 || isNaN(qty)) {
+              showToast("Please key in correct buy metrics.", "error");
+              return;
+            }
+
+            const addedLotId = generateId();
+
+            setProfiles(prevProfiles => {
+              return prevProfiles.map(p => {
+                if (p.id !== activeProfileId) return p;
+
+                const updatedHoldings = { ...p.holdings };
+                const existingHolding = updatedHoldings[tickerSymbol];
+
+                const newLot = {
+                  id: addedLotId,
+                  date: dateStr,
+                  price: price,
+                  qty: qty
+                };
+
+                if (existingHolding) {
+                  updatedHoldings[tickerSymbol] = {
+                    ...existingHolding,
+                    buyLots: [...existingHolding.buyLots, newLot],
+                    gttPrice: gttVal || existingHolding.gttPrice
+                  };
+                } else {
+                  updatedHoldings[tickerSymbol] = {
+                    ticker: tickerSymbol,
+                    name: companyName,
+                    buyLots: [newLot],
+                    gttPrice: gttVal,
+                    price: null,
+                    prevClose: null
+                  };
+                }
+
+                const newLog = {
+                  id: generateId(),
+                  date: new Date(dateStr).toISOString(),
+                  type: "BUY",
+                  text: `Logged Buy Order: Purchased ${qty} shares of ${tickerSymbol} at ₹${price.toFixed(2)}`,
+                  amount: qty * price,
+                  revertStockState: {
+                    ticker: tickerSymbol,
+                    addedLotId: addedLotId
+                  }
+                };
+
+                return {
+                  ...p,
+                  holdings: updatedHoldings,
+                  logs: [newLog, ...p.logs],
+                  synced: false
+                };
+              });
+            });
+
+            setShowAddStockModal(false);
+            setSearchQuery("");
+            setSelectedStock(null);
+            setBuyPrice("");
+            setBuyQty("");
+            setGttTrigger("");
+            setCustomGttPercent("");
+            showToast(`Asset lot of ${tickerSymbol} added to tracker!`, "success");
+          };
+
+          // Full state restoration and action undo pipeline
+          const handleDeleteLog = (logId) => {
+            const profile = profiles.find(p => p.id === activeProfileId);
+            if (!profile) return;
+            
+            const logToDelete = profile.logs.find(l => l.id === logId);
+            if (!logToDelete) return;
+
+            setProfiles(prevProfiles => {
+              return prevProfiles.map(p => {
+                if (p.id !== activeProfileId) return p;
+
+                let updatedHoldings = { ...p.holdings };
+                let updatedRealizedPnL = p.realizedPnL;
+
+                if (logToDelete.revertStockState) {
+                  const { ticker, buyLots, realizedPnLDiff, addedLotId, price, prevClose, gttPrice } = logToDelete.revertStockState;
+
+                  if (logToDelete.type === "SELL") {
+                    updatedRealizedPnL = updatedRealizedPnL - (realizedPnLDiff || 0);
+                    
+                    if (buyLots) {
+                      if (!updatedHoldings[ticker]) {
+                        const originalReg = StockRegistry.find(s => s.symbol === ticker);
+                        updatedHoldings[ticker] = {
+                          ticker: ticker,
+                          name: originalReg ? originalReg.name : ticker,
+                          buyLots: buyLots,
+                          gttPrice: gttPrice !== undefined ? gttPrice : null,
+                          price: price !== undefined ? price : null,
+                          prevClose: prevClose !== undefined ? prevClose : null
+                        };
+                      } else {
+                        updatedHoldings[ticker] = {
+                          ...updatedHoldings[ticker],
+                          buyLots: buyLots,
+                          price: updatedHoldings[ticker].price !== null ? updatedHoldings[ticker].price : (price !== undefined ? price : null),
+                          prevClose: updatedHoldings[ticker].prevClose !== null ? updatedHoldings[ticker].prevClose : (prevClose !== undefined ? prevClose : null),
+                          gttPrice: updatedHoldings[ticker].gttPrice !== null ? updatedHoldings[ticker].gttPrice : (gttPrice !== undefined ? gttPrice : null)
+                        };
+                      }
+                    }
+                  } else if (logToDelete.type === "BUY") {
+                    if (updatedHoldings[ticker]) {
+                      const filteredLots = updatedHoldings[ticker].buyLots.filter(l => l.id !== addedLotId);
+                      if (filteredLots.length === 0) {
+                        delete updatedHoldings[ticker];
+                      } else {
+                        updatedHoldings[ticker] = {
+                          ...updatedHoldings[ticker],
+                          buyLots: filteredLots
+                        };
+                      }
+                    }
+                  }
+                }
+
+                const filteredLogs = p.logs.filter(l => l.id !== logId);
+
+                return {
+                  ...p,
+                  holdings: updatedHoldings,
+                  realizedPnL: updatedRealizedPnL,
+                  logs: filteredLogs
+                };
+              });
+            });
+
+            showToast("Log deleted and transaction reversed successfully!", "info");
+          };
+
+          // Bulk Pasted Excel/Sheets Parser
+          const parseExcelDump = (text) => {
+            const lines = text.split(/\r?\n/);
+            const trades = [];
+
+            lines.forEach((line) => {
+              const row = line.trim();
+              if (!row) return;
+
+              let cols = row.split('\t');
+              
+              if (cols.length < 5) {
+                const spaceSplit = row.split(/\s{2,}/);
+                if (spaceSplit.length >= 5) {
+                  cols = spaceSplit;
+                }
+              }
+
+              const trimmedCols = cols.map(c => c.trim().replace(/^"(.*)"$/, '$1'));
+
+              // Skip headers if found
+              if (trimmedCols[0].toLowerCase().includes("company") || trimmedCols[1]?.toLowerCase() === "symbol") {
+                return;
+              }
+
+              const companyName = trimmedCols[0];
+              const symbol = trimmedCols[1]?.toUpperCase();
+              const isin = trimmedCols[2];
+              const action = trimmedCols[3]?.toUpperCase(); // BUY or SELL
+              const qty = parseInt(trimmedCols[4], 10);
+              
+              const totalValRaw = trimmedCols[5] ? trimmedCols[5].replace(/,/g, '') : "0";
+              const totalValue = parseFloat(totalValRaw);
+
+              const exchange = trimmedCols[6] || "NSE";
+              const orderId = trimmedCols[7] || `ord-${generateId()}`;
+              const rawDate = trimmedCols[8];
+
+              if (!symbol || isNaN(qty) || isNaN(totalValue) || (action !== "BUY" && action !== "SELL")) {
+                return;
+              }
+
+              const pricePerShare = qty > 0 ? (totalValue / qty) : 0;
+
+              let parsedDate = new Date();
+              if (rawDate) {
+                const dateParts = rawDate.match(/^(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+                if (dateParts) {
+                  const day = parseInt(dateParts[1], 10);
+                  const month = parseInt(dateParts[2], 10) - 1; 
+                  const year = parseInt(dateParts[3], 10);
+                  let hour = parseInt(dateParts[4], 10);
+                  const min = parseInt(dateParts[5], 10);
+                  const ampm = dateParts[6] ? dateParts[6].toUpperCase() : null;
+
+                  if (ampm === "PM" && hour < 12) hour += 12;
+                  if (ampm === "AM" && hour === 12) hour = 0;
+
+                  parsedDate = new Date(year, month, day, hour, min, 0);
+                } else {
+                  const epoch = Date.parse(rawDate);
+                  if (!isNaN(epoch)) {
+                    parsedDate = new Date(epoch);
+                  }
+                }
+              }
+
+              trades.push({
+                companyName,
+                symbol,
+                isin,
+                action,
+                qty,
+                totalValue,
+                pricePerShare,
+                exchange,
+                orderId,
+                date: parsedDate,
+                status: trimmedCols[9] || "Executed"
+              });
+            });
+
+            // Sort trades chronologically to build accurate portfolio sequences
+            trades.sort((a, b) => a.date - b.date);
+            return trades;
+          };
+
+          const handleExcelImportSubmit = (e) => {
+            e.preventDefault();
+            if (!excelPasteText.trim()) {
+              showToast("Pasted data is empty.", "error");
+              return;
+            }
+
+            try {
+              const parsedTrades = parseExcelDump(excelPasteText);
+              if (parsedTrades.length === 0) {
+                showToast("Failed to parse. Please check columns formatting.", "error");
+                return;
+              }
+
+              let importSuccessCount = 0;
+              let importErrorCount = 0;
+              const skipWarningsList = [];
+
+              setProfiles(prevProfiles => {
+                return prevProfiles.map(p => {
+                  if (p.id !== activeProfileId) return p;
+
+                  let updatedHoldings = excelOverwriteMode ? {} : { ...p.holdings };
+                  let updatedRealizedPnL = excelOverwriteMode ? 0 : p.realizedPnL;
+                  let updatedLogs = excelOverwriteMode ? [
+                    { id: generateId(), date: new Date().toISOString(), type: "SYSTEM", text: "Portfolio state cleared and re-initialized via bulk spreadsheet import." }
+                  ] : [...p.logs];
+
+                  parsedTrades.forEach(trade => {
+                    const { symbol, companyName, action, qty, pricePerShare, totalValue, date } = trade;
+
+                    if (action === "BUY") {
+                      const existingHolding = updatedHoldings[symbol];
+                      const newLot = {
+                        id: `lot-imp-${generateId()}`,
+                        date: date.toISOString().split('T')[0],
+                        price: pricePerShare,
+                        qty: qty
+                      };
+
+                      if (existingHolding) {
+                        updatedHoldings[symbol] = {
+                          ...existingHolding,
+                          buyLots: [...existingHolding.buyLots, newLot]
+                        };
+                      } else {
+                        updatedHoldings[symbol] = {
+                          ticker: symbol,
+                          name: companyName || symbol,
+                          buyLots: [newLot],
+                          gttPrice: null,
+                          price: null,
+                          prevClose: null
+                        };
+                      }
+
+                      updatedLogs.unshift({
+                        id: generateId(),
+                        date: date.toISOString(),
+                        type: "BUY",
+                        text: `Imported buy lot: ${qty} shares of ${symbol} at ₹${pricePerShare.toFixed(2)}`,
+                        amount: totalValue,
+                        revertStockState: {
+                          ticker: symbol,
+                          addedLotId: newLot.id
+                        }
+                      });
+                      importSuccessCount++;
+
+                    } else if (action === "SELL") {
+                      const existingHolding = updatedHoldings[symbol];
+                      if (!existingHolding) {
+                        skipWarningsList.push(`Skipped sell of ${symbol} on ${date.toLocaleDateString()}: No active holding lot found.`);
+                        importErrorCount++;
+                        return;
+                      }
+
+                      const totalOwned = existingHolding.buyLots.reduce((acc, l) => acc + l.qty, 0);
+                      if (qty > totalOwned) {
+                        skipWarningsList.push(`Skipped sell of ${symbol} on ${date.toLocaleDateString()}: Attempted to liquidate ${qty} shares, but you only possess ${totalOwned}.`);
+                        importErrorCount++;
+                        return;
+                      }
+
+                      const originalBuyLotsBeforeSale = existingHolding.buyLots.map(lot => ({ ...lot }));
+                      const originalLots = [...existingHolding.buyLots];
+                      originalLots.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                      let remainingSellQty = qty;
+                      let realizedGainLoss = 0;
+                      const modifiedLots = [];
+
+                      for (let lot of originalLots) {
+                        if (remainingSellQty <= 0) {
+                          modifiedLots.push(lot);
+                          continue;
+                        }
+
+                        if (lot.qty <= remainingSellQty) {
+                          realizedGainLoss += (pricePerShare - lot.price) * lot.qty;
+                          remainingSellQty -= lot.qty;
+                        } else {
+                          realizedGainLoss += (pricePerShare - lot.price) * remainingSellQty;
+                          modifiedLots.push({
+                            ...lot,
+                            qty: lot.qty - remainingSellQty
+                          });
+                          remainingSellQty = 0;
+                        }
+                      }
+
+                      const activeRemainingQty = modifiedLots.reduce((acc, l) => acc + l.qty, 0);
+                      const originalPrice = existingHolding.price;
+                      const originalPrevClose = existingHolding.prevClose;
+                      const originalGttPrice = existingHolding.gttPrice;
+
+                      if (activeRemainingQty === 0) {
+                        delete updatedHoldings[symbol];
+                      } else {
+                        updatedHoldings[symbol] = {
+                          ...existingHolding,
+                          buyLots: modifiedLots
+                        };
+                      }
+
+                      updatedRealizedPnL += realizedGainLoss;
+                      updatedLogs.unshift({
+                        id: generateId(),
+                        date: date.toISOString(),
+                        type: "SELL",
+                        text: `Imported sell: ${qty} shares of ${symbol} at ₹${pricePerShare.toFixed(2)} (Gain: ₹${realizedGainLoss.toFixed(2)})`,
+                        amount: totalValue,
+                        revertStockState: {
+                          ticker: symbol,
+                          buyLots: originalBuyLotsBeforeSale,
+                          realizedPnLDiff: realizedGainLoss,
+                          price: originalPrice,
+                          prevClose: originalPrevClose,
+                          gttPrice: originalGttPrice
+                        }
+                      });
+                      importSuccessCount++;
+                    }
+                  });
+
+                  setExcelReport({
+                    successCount: importSuccessCount,
+                    errorCount: importErrorCount,
+                    warnings: skipWarningsList,
+                    totalParsed: parsedTrades.length
+                  });
+
+                  return {
+                    ...p,
+                    holdings: updatedHoldings,
+                    realizedPnL: updatedRealizedPnL,
+                    logs: updatedLogs,
+                    synced: false
+                  };
+                });
+              });
+
+              setShowExcelSuccessScreen(true);
+              setExcelPasteText("");
+              showToast("Pasted excel data processed successfully!", "success");
+
+            } catch (err) {
+              showToast("Error parsing dump: " + err.message, "error");
+            }
+          };
+
+          const handleLoadSampleData = () => {
+            const sample = `RELIANCE INDUSTRIES LTD	RELIANCE	INE002A01018	SELL	10	15802	NSE	1300000055330833	05-01-2026 02:37 PM	Executed
+HINDUSTAN ZINC LIMITED	HINDZINC	INE267A01025	BUY	50	34500	NSE	1100000000093159	30-01-2026 09:00 AM	Executed
+TATAAML-TATAGOLD	TATAGOLD	INF277KA1976	BUY	6000	94800	NSE	1300000001025781	30-01-2026 09:15 AM	Executed
+TATAAML-TATAGOLD	TATAGOLD	INF277KA1976	BUY	10000	140200	NSE	1300000000774341	01-02-2026 09:15 AM	Executed
+TATAAML-TATSILV	TATSILV	INF277KA1984	BUY	404	9942.44	NSE	1300000063421395	10-02-2026 01:15 PM	Executed`;
+            setExcelPasteText(sample);
+            showToast("Sample data loaded into block!", "info");
+          };
+
+          const handleExportState = () => {
+            try {
+              const stateObj = {
+                version: "2.0.0",
+                profiles: profiles,
+                activeProfileId: activeProfileId
+              };
+              const jsonString = JSON.stringify(stateObj, null, 2);
+              const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonString);
+              
+              const exportFileDefaultName = `aura_portfolio_state_${new Date().toISOString().split('T')[0]}.json`;
+              
+              const linkElement = document.createElement('a');
+              linkElement.setAttribute('href', dataUri);
+              linkElement.setAttribute('download', exportFileDefaultName);
+              linkElement.click();
+              
+              showToast("All data successfully backed up to JSON!", "success");
+            } catch (err) {
+              showToast("Export failed: " + err.message, "error");
+            }
+          };
+
+          const handleImportState = () => {
+            try {
+              const parsed = JSON.parse(importJsonText.trim());
+              if (!parsed.profiles || !Array.isArray(parsed.profiles)) {
+                throw new Error("Invalid format. 'profiles' list is required.");
+              }
+              setProfiles(parsed.profiles);
+              if (parsed.activeProfileId) {
+                setActiveProfileId(parsed.activeProfileId);
+              }
+              setShowImportExportModal(false);
+              setImportJsonText("");
+              showToast("Data restoration snapshot successfully parsed!", "success");
+            } catch (err) {
+              showToast("Import failed: " + err.message, "error");
+            }
+          };
+
+          const exportLogsToCSV = () => {
+            if (!activeProfile || activeProfile.logs.length === 0) {
+              showToast("No active ledger rows to export.", "error");
+              return;
+            }
+
+            const headers = ["ID", "Timestamp", "Category", "Log Details", "Transaction Volume (INR)"];
+            const rows = activeProfile.logs.map(log => [
+              log.id,
+              new Date(log.date).toLocaleString(),
+              log.type,
+              `"${log.text.replace(/"/g, '""')}"`,
+              log.amount ? log.amount : ""
+            ]);
+
+            const csvContent = "data:text/csv;charset=utf-8," 
+              + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `ledger_${activeProfile.name.toLowerCase()}_export.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("CSV ledger sheet successfully downloaded!", "success");
+          };
+
+          const handleCreateProfile = (e) => {
+            e.preventDefault();
+            if (!newProfileName.trim()) return;
+
+            const newId = `prof-${newProfileName.trim().toLowerCase().replace(/\s+/g, '-')}`;
+            
+            if (profiles.some(p => p.id === newId)) {
+              showToast("Profile name already exists.", "error");
+              return;
+            }
+
+            const newProfileObj = {
+              id: newId,
+              name: newProfileName.trim(),
+              initials: newProfileName.trim().substring(0, 2).toUpperCase(),
+              realizedPnL: 0.00,
+              synced: false,
+              lastRefreshed: null,
+              holdings: {},
+              logs: [
+                { id: generateId(), date: new Date().toISOString(), type: "SYSTEM", text: "New premium profile space initialized." }
+              ]
+            };
+
+            setProfiles(prev => [...prev, newProfileObj]);
+            setActiveProfileId(newId);
+            setShowProfileCreateModal(false);
+            setNewProfileName("");
+            setViewState('DASHBOARD');
+            showToast(`Created profile: ${newProfileObj.name}!`, "success");
+          };
+
+          const handleDeleteProfile = () => {
+            if (profiles.length <= 1) {
+              showToast("At least one profile must exist.", "error");
+              return;
+            }
+
+            const remaining = profiles.filter(p => p.id !== activeProfileId);
+            setProfiles(remaining);
+            setActiveProfileId(remaining[0].id);
+            showToast("Profile deleted.", "info");
+          };
+
+          const themeStyles = theme === 'dark' ? {
+            bg: "bg-[#0b0f19] text-slate-100",
+            header: "bg-[#141b29] border-[#1e293b]",
+            card: "bg-[#111622] border-[#1e293b]",
+            cardHeader: "bg-[#141b29] border-[#1e293b]",
+            subCard: "bg-slate-950/40 border-[#1e293b]/30",
+            input: "bg-slate-950 border-[#1e293b] text-slate-100 placeholder-slate-500 focus:border-emerald-500",
+            tableHeader: "bg-[#141b29] text-slate-400 border-[#1e293b]",
+            textMuted: "text-slate-400",
+            buttonMuted: "bg-[#111622] border-[#1e293b] text-slate-300 hover:text-white hover:bg-slate-800",
+            border: "border-[#1e293b]",
+          } : {
+            bg: "bg-slate-50 text-slate-800",
+            header: "bg-white border-slate-200 shadow-sm",
+            card: "bg-white border-slate-200 shadow-sm",
+            cardHeader: "bg-slate-50 border-slate-200",
+            subCard: "bg-slate-50/70 border-slate-200",
+            input: "bg-white border-slate-300 text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500",
+            tableHeader: "bg-slate-100 text-slate-600 border-slate-200",
+            textMuted: "text-slate-500",
+            buttonMuted: "bg-white border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-50",
+            border: "border-slate-200",
+          };
+
+          return (
+            <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 relative overflow-hidden ${themeStyles.bg}`}>
+              
+              {theme === 'dark' && (
+                <React.Fragment>
+                  <div className="absolute top-[-300px] left-[-300px] w-[600px] h-[600px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
+                  <div className="absolute top-[20%] right-[-300px] w-[700px] h-[700px] bg-blue-500/5 rounded-full blur-[140px] pointer-events-none" />
+                </React.Fragment>
+              )}
+
+              {isRefreshing && (
+                <div className="bg-emerald-500/10 border-b border-emerald-500/20 text-emerald-400 px-6 py-2.5 text-xs flex items-center justify-between z-50">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 4H18.23" />
+                    </svg>
+                    <span className="font-semibold tracking-wide">Syncing API: {refreshProgress}</span>
+                  </div>
+                  <button 
+                    onClick={() => setIsRefreshing(false)} 
+                    className="text-emerald-400/70 hover:text-emerald-400 text-[10px] uppercase font-bold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {toast && (
+                <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 border py-3.5 px-5 rounded-xl shadow-2xl animate-fade-in-down ${theme === 'dark' ? 'bg-[#111622] border-[#1e293b]' : 'bg-white border-slate-200'}`}>
+                  <span className={`w-2.5 h-2.5 rounded-full ${toast.type === 'error' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                  <p className="text-sm font-medium">{toast.message}</p>
+                </div>
+              )}
+
+              <header className={`px-6 py-4 sticky top-0 z-40 backdrop-blur-md bg-opacity-90 border-b ${themeStyles.header}`}>
+                <div className="max-w-7xl mx-auto flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-emerald-500 to-blue-500 flex items-center justify-center shadow-lg shadow-emerald-500/15">
+                      <svg className="w-5 h-5 text-white stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h1 className="text-lg font-black tracking-tight">AURA | WEALTH</h1>
+                      <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">Personal Finance Portfolio</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                      className={`w-9 h-9 rounded-lg border flex items-center justify-center transition ${themeStyles.buttonMuted}`}
+                      title="Toggle Theme"
+                    >
+                      {theme === 'dark' ? (
+                        <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.46 5.05L5.75 4.343a1 1 0 10-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z" /></svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-slate-700" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" /></svg>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setShowExcelImportModal(true)}
+                      className={`text-xs flex items-center gap-1.5 px-3 py-2 rounded-lg border transition ${themeStyles.buttonMuted}`}
+                    >
+                      <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>Excel Import</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowApiSettingsModal(true)}
+                      className={`text-xs flex items-center gap-1.5 px-3 py-2 rounded-lg border transition ${
+                        customApiKey.trim() ? "border-emerald-500/40 text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10" : themeStyles.buttonMuted
+                      }`}
+                      title="RapidAPI Configuration Panel"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                      <span className="hidden sm:inline">API Config</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowImportExportModal(true)}
+                      className={`text-xs flex items-center gap-1.5 px-3 py-2 rounded-lg border transition ${themeStyles.buttonMuted}`}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                      <span>Backup Data</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowDebugConsole(!showDebugConsole)}
+                      className={`text-xs flex items-center gap-1.5 px-3 py-2 rounded-lg border transition ${themeStyles.buttonMuted}`}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      <span>API Drawer</span>
+                    </button>
+                  </div>
+                </div>
+              </header>
+
+              <main className="flex-grow max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+                
+                {viewState === 'PROFILES_SELECTOR' ? (
+                  <div className="space-y-6 max-w-3xl mx-auto py-12 animate-fade-in">
+                    <div className="text-center space-y-2">
+                      <h2 className="text-3xl font-extrabold tracking-tight">Access Investment Vaults</h2>
+                      <p className={`${themeStyles.textMuted} text-sm`}>Select or create customized investment ledgers with localized cache profiles.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
+                      {profiles.map((p) => {
+                        const totalAssets = Object.keys(p.holdings).length;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              setActiveProfileId(p.id);
+                              setViewState('DASHBOARD');
+                            }}
+                            className={`p-6 rounded-2xl border cursor-pointer transition flex flex-col justify-between h-44 overflow-hidden relative ${
+                              activeProfileId === p.id
+                                ? 'border-emerald-500 bg-emerald-500/5 shadow-xl shadow-emerald-500/5'
+                                : `${themeStyles.card} hover:border-slate-400`
+                            }`}
+                          >
+                            <div className="flex justify-between items-start z-10">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm ${
+                                  activeProfileId === p.id ? 'bg-emerald-500/15 text-emerald-500' : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                  {p.initials}
+                                </div>
+                                <div>
+                                  <h3 className="font-bold text-base">{p.name}'s Vault</h3>
+                                  <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">ID: {p.id}</span>
+                                </div>
+                              </div>
+                              {activeProfileId === p.id && (
+                                <span className="bg-emerald-500/15 text-emerald-500 text-[10px] uppercase tracking-widest px-2.5 py-1 rounded-full font-bold">
+                                  Active State
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex justify-between items-end border-t border-slate-200/50 pt-4 z-10">
+                              <div>
+                                <p className="text-[10px] uppercase tracking-widest opacity-55">Active Assets</p>
+                                <p className="text-sm font-semibold">{totalAssets} holdings logged</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] uppercase tracking-widest opacity-55">Realized Ledger</p>
+                                <p className="text-sm font-semibold text-emerald-500">{formatINR(p.realizedPnL)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <div
+                        onClick={() => setShowProfileCreateModal(true)}
+                        className={`p-6 rounded-2xl border border-dashed flex flex-col items-center justify-center gap-3 cursor-pointer transition min-h-[11rem] ${themeStyles.card} border-slate-300 hover:border-slate-500`}
+                      >
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 border border-slate-200">
+                          <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        </div>
+                        <span className="text-sm font-bold">Add New Profile Vault</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6 animate-fade-in">
+                    
+                    <div className="w-full overflow-x-auto scrollbar-none py-1">
+                      <div className={`min-w-max flex items-center justify-between gap-4 py-3 px-4 border rounded-2xl shadow-sm ${themeStyles.card}`}>
+                        
+                        <div className="flex items-center gap-3 divide-x divide-slate-200">
+                          <button
+                            onClick={() => setViewState('PROFILES_SELECTOR')}
+                            className="text-xs font-bold flex items-center gap-1.5 py-1.5 px-3 rounded-lg border transition bg-slate-100 text-slate-800 hover:bg-slate-200 border-slate-300"
+                          >
+                            <span>Profiles</span>
+                          </button>
+
+                          <div className="flex items-center gap-2 pl-3">
+                            <div className="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center justify-center text-xs font-bold font-mono">
+                              {activeProfile?.initials || "NI"}
+                            </div>
+                            <span className="text-sm font-bold font-mono">{activeProfile?.name || "Nikita"}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold font-mono opacity-70">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                            <span>{syncRelativeTimeText}</span>
+                          </div>
+
+                          <button
+                            onClick={handleManualRefresh}
+                            disabled={isRefreshing}
+                            className="text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-lg border font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300 transition disabled:opacity-40"
+                          >
+                            <svg className={`w-3.5 h-3.5 text-emerald-500 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 4H18.23" />
+                            </svg>
+                            <span>Sync Market</span>
+                          </button>
+
+                          <button
+                            onClick={handleDeleteProfile}
+                            className="text-xs text-rose-500 hover:text-rose-600 bg-transparent border border-rose-500/20 hover:border-rose-500/40 py-1.5 px-3 rounded-lg transition"
+                          >
+                            Delete profile
+                          </button>
+
+                          <button
+                            onClick={() => setShowAddStockModal(true)}
+                            className="text-xs text-white font-bold bg-[#22c55e] hover:bg-[#1ebd54] py-1.5 px-4 rounded-lg transition shadow-sm active:scale-95"
+                          >
+                            + Add stock
+                          </button>
+                        </div>
+
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      
+                      <div className={`p-5 rounded-2xl border ${themeStyles.card}`}>
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs uppercase tracking-wider font-bold opacity-60">HOLDINGS</p>
+                          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 border border-slate-200">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                          </div>
+                        </div>
+                        <p className="text-2xl font-black mt-3 font-mono">{metrics.activeHoldingsCount}</p>
+                      </div>
+
+                      <div className={`p-5 rounded-2xl border ${themeStyles.card}`}>
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs uppercase tracking-wider font-bold opacity-60">INVESTED</p>
+                          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 border border-slate-200">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          </div>
+                        </div>
+                        <p className="text-2xl font-black mt-3 font-mono">{formatINR(metrics.totalCostBasis, true)}</p>
+                      </div>
+
+                      <div className={`p-5 rounded-2xl border ${themeStyles.card} relative overflow-hidden`}>
+                        {metrics.isSynced && (
+                          <div className={`absolute top-0 left-0 right-0 h-1 ${metrics.absolutePnL >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                        )}
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs uppercase tracking-wider font-bold opacity-60">CURRENT VALUE</p>
+                          <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 border border-slate-200 dark:border-slate-700">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                          </div>
+                        </div>
+                        {metrics.isSynced ? (
+                          <div className="mt-3 space-y-2">
+                            <p className={`text-2xl font-black font-mono ${metrics.absolutePnL >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                              {formatINR(metrics.totalCurrentValue, true)}
+                            </p>
+
+                            <div className="pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                              <div className="flex items-baseline gap-1.5">
+                                <span className={`text-xl font-black font-mono leading-none ${metrics.absolutePnL >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                  {formatPercent(metrics.percentPnL)}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Current Profit</span>
+                              </div>
+                              <p className={`text-xs font-semibold opacity-75 mt-0.5 ${metrics.absolutePnL >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                {metrics.absolutePnL >= 0 ? '+' : ''}{formatINR(metrics.absolutePnL, true)}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-base font-semibold mt-4 italic opacity-50">Not synced yet</p>
+                        )}
+                      </div>
+
+                      <div className={`p-5 rounded-2xl border ${themeStyles.card} relative overflow-hidden`}>
+                        {metrics.isSynced && (
+                          <div className={`absolute top-0 left-0 right-0 h-1 ${((activeProfile?.realizedPnL || 0) + metrics.absolutePnL) >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                        )}
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs uppercase tracking-wider font-bold opacity-60 font-mono">LIFETIME PROFIT</p>
+                          <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 border border-slate-200 dark:border-slate-700">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                          </div>
+                        </div>
+                        {metrics.isSynced ? (
+                          <div className="mt-3 space-y-3">
+                            {(() => {
+                              const totalLifetimeAbs = (activeProfile?.realizedPnL || 0) + metrics.absolutePnL;
+                              const costBasis = metrics.totalCostBasis || 1;
+                              const totalLifetimePct = (totalLifetimeAbs / costBasis) * 100;
+                              return (
+                                <div>
+                                  <div className="flex items-baseline gap-1.5">
+                                    <span className={`text-2xl font-black font-mono leading-none ${totalLifetimeAbs >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                      {formatPercent(totalLifetimePct)}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Lifetime Total</span>
+                                  </div>
+                                  <p className={`text-xs font-semibold opacity-75 mt-0.5 ${totalLifetimeAbs >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {totalLifetimeAbs >= 0 ? '+' : ''}{formatINR(totalLifetimeAbs, true)} (incl. {formatINR(activeProfile?.realizedPnL || 0, true)} realized)
+                                  </p>
+                                </div>
+                              );
+                            })()}
+
+                            <div className="pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                              <button
+                                onClick={() => setShowRealizedSalesModal(true)}
+                                className="text-[10px] font-black uppercase text-emerald-500 hover:text-emerald-400 flex items-center gap-1 tracking-wider"
+                              >
+                                <span>View Realized Sales Details</span>
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-base font-semibold mt-4 italic opacity-50 font-mono">Not synced yet</p>
+                        )}
+                      </div>
+
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider opacity-60">Asset Holdings Portfolio</h3>
+                        <span className="text-xs opacity-50">{Object.keys(activeProfile?.holdings || {}).length} positions tracked</span>
+                      </div>
+
+                      {Object.keys(activeProfile?.holdings || {}).length === 0 ? (
+                        <div className={`py-20 border border-dashed rounded-2xl flex flex-col items-center justify-center gap-4 text-center ${themeStyles.card}`}>
+                          <div className="w-16 h-16 rounded-full flex items-center justify-center bg-slate-100 border border-slate-200 text-slate-400">
+                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                          </div>
+                          <div>
+                            <h4 className="font-bold">No Asset Lots Loaded</h4>
+                            <p className="text-sm max-w-sm mx-auto mt-1 opacity-60">Log a stock purchase transaction or use the Excel Bulk Importer to populate your real-time tracker.</p>
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => setShowExcelImportModal(true)}
+                              className="border border-emerald-500/30 text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 px-5 py-2 rounded-xl text-xs transition font-bold shadow-sm"
+                            >
+                              Excel Import
+                            </button>
+                            <button
+                              onClick={() => setShowAddStockModal(true)}
+                              className="border px-5 py-2 rounded-xl text-xs transition font-bold shadow-sm"
+                            >
+                              Configure First Stock
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-6">
+                          {Object.values(activeProfile.holdings).map((holding) => {
+                            const totalShares = holding.buyLots.reduce((acc, l) => acc + l.qty, 0);
+                            const totalInvested = holding.buyLots.reduce((acc, l) => acc + (l.qty * l.price), 0);
+                            const avgCost = totalShares > 0 ? (totalInvested / totalShares) : 0;
+                            const holdingInitials = holding.ticker.substring(0, 2).toUpperCase();
+
+                            const synced = holding.price !== null;
+                            const currentValue = synced ? totalShares * holding.price : null;
+                            const returnsAbs = synced ? (currentValue - totalInvested) : null;
+                            const returnsPct = synced && totalInvested > 0 ? (returnsAbs / totalInvested) * 100 : null;
+                            const dayChangePct = synced && holding.prevClose ? ((holding.price - holding.prevClose) / holding.prevClose) * 100 : null;
+                            const dayChangeAmt = synced && holding.prevClose ? (holding.price - holding.prevClose) * totalShares : null;
+
+                            let gttDistance = null;
+                            if (synced && holding.gttPrice && holding.price) {
+                              gttDistance = ((holding.gttPrice - holding.price) / holding.price) * 100;
+                            }
+
+                            return (
+                              <div key={holding.ticker} className={`border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${themeStyles.card}`}>
+                                
+                                <div className={`px-5 py-4 border-b flex flex-wrap justify-between items-center gap-4 ${themeStyles.cardHeader}`}>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-bold font-mono text-emerald-600 text-sm shadow-inner">
+                                      {holdingInitials}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-black text-lg tracking-tight font-mono">{holding.ticker}</span>
+                                        <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md text-[10px] uppercase font-bold opacity-60">
+                                          {StockRegistry.find(s => s.symbol === holding.ticker)?.exchange || "NSE"}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs opacity-60 line-clamp-1">{holding.name}</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-6">
+                                    <div className="text-right">
+                                      <p className="text-[10px] uppercase tracking-widest opacity-60 font-bold">Invested Capital</p>
+                                      <p className="text-base font-black font-mono">{formatINR(totalInvested, true)}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-[10px] uppercase tracking-widest opacity-60 font-bold">Aggregated Holdings</p>
+                                      <p className="text-sm font-semibold font-mono">{totalShares} Shares @ Avg ₹{Math.round(avgCost)}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => handleOpenEditModal(holding.ticker)}
+                                        className="text-xs font-bold border py-1.5 px-3 rounded-lg transition"
+                                      >
+                                        Edit Stock
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedHoldingForSell(holding.ticker);
+                                          setSellQty(totalShares.toString());
+                                          setSellPrice(holding.price ? holding.price.toString() : avgCost.toFixed(2));
+                                          setShowSellStockModal(true);
+                                        }}
+                                        className="text-xs bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 py-1.5 px-3.5 rounded-lg transition font-bold"
+                                      >
+                                        Sell/Trade
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+                                  
+                                  <div className="p-5 space-y-3">
+                                    <div className="flex justify-between items-center pb-2 border-b border-slate-200/50">
+                                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Purchase Details</span>
+                                      <span className="text-[10px] uppercase opacity-55 font-bold">{holding.buyLots.length} Lots</span>
+                                    </div>
+                                    
+                                    <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                                      {holding.buyLots.map((lot) => (
+                                        <div key={lot.id} className={`p-3 rounded-xl border flex flex-col gap-1.5 ${themeStyles.subCard}`}>
+                                          <div className="flex justify-between items-center">
+                                            <span className="text-xs font-extrabold text-emerald-500 font-mono">
+                                              Holding for {getHoldingDuration(lot.date)}
+                                            </span>
+                                            <span className="text-[9px] font-mono opacity-40">Lot ID: {lot.id}</span>
+                                          </div>
+                                          <div className="flex justify-between items-center text-xs">
+                                            <span className="opacity-60">Date: {formatDateString(lot.date)}</span>
+                                            <span className="font-mono font-bold">{lot.qty} shares</span>
+                                          </div>
+                                          <div className="text-right border-t border-slate-200/20 pt-1">
+                                            <span className="text-xs font-bold font-mono opacity-80">Cost: ₹{Math.round(lot.price)}/sh</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  <div className="p-5 space-y-3 bg-slate-500/5">
+                                    <div className="flex justify-between items-center pb-2 border-b border-slate-200/50">
+                                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">Market Data Overview</span>
+                                      {synced && (
+                                        <span className="bg-emerald-500/10 text-emerald-600 text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold">
+                                          Live Feed
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {synced ? (
+                                      <div className="space-y-3">
+                                        <div className={`p-2.5 rounded-xl border ${themeStyles.subCard} flex justify-between items-center`}>
+                                          <div>
+                                            <p className="text-[9px] uppercase tracking-widest opacity-55">Lifetime Return</p>
+                                            <p className={`text-base font-black font-mono leading-tight ${returnsAbs >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                              {formatPercent(returnsPct)}
+                                            </p>
+                                          </div>
+                                          <p className={`text-xs font-bold font-mono ${returnsAbs >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                            {returnsAbs >= 0 ? '+' : ''}{formatINR(returnsAbs, true)}
+                                          </p>
+                                        </div>
+
+                                        <div className={`p-2.5 rounded-xl border ${themeStyles.subCard} flex justify-between items-center`}>
+                                          <div>
+                                            <p className="text-[9px] uppercase tracking-widest opacity-55">Daily Return</p>
+                                            <p className={`text-base font-black font-mono leading-tight ${dayChangePct >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                              {formatPercent(dayChangePct)}
+                                            </p>
+                                          </div>
+                                          <p className={`text-xs font-bold font-mono ${dayChangePct >= 0 ? 'text-[#22c55e]' : 'text-rose-500'}`}>
+                                            {dayChangePct >= 0 ? '▲' : '▼'} {formatINR(dayChangeAmt, true)}
+                                          </p>
+                                        </div>
+
+                                        <div className="pt-1.5 flex justify-between items-baseline">
+                                          <span className="text-[10px] font-bold uppercase opacity-55">Current Market Price</span>
+                                          <span className="text-lg font-black font-mono">{formatINR(holding.price, true)}</span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="h-28 flex flex-col items-center justify-center text-slate-500 italic space-y-1">
+                                        <p className="text-sm font-semibold">Not synced yet</p>
+                                        <p className="text-[10px] uppercase text-center max-w-[14rem] opacity-65">Click sync market above</p>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="p-5 space-y-3">
+                                    <div className="flex justify-between items-center pb-2 border-b border-slate-200/50">
+                                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">GTT Order Rule</span>
+                                      {holding.gttPrice && (
+                                        <span className="bg-blue-500/10 text-blue-500 text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold">
+                                          Limit Sell
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {holding.gttPrice ? (
+                                      <div className="space-y-3">
+                                        <div className="flex justify-between items-end">
+                                          <div>
+                                            <p className="text-[10px] uppercase tracking-widest opacity-50">Trigger Target</p>
+                                            <p className="text-base font-black font-mono">{formatINR(holding.gttPrice, true)}</p>
+                                          </div>
+                                          <div className="text-right">
+                                            <p className="text-[9px] uppercase tracking-widest opacity-50">GTT Trigger Goal</p>
+                                            <p className="text-base font-black text-blue-500 font-mono">
+                                              {formatPercent(avgCost > 0 ? ((holding.gttPrice - avgCost) / avgCost) * 100 : 0)}
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        <div className={`p-3 rounded-xl border ${themeStyles.subCard}`}>
+                                          <div className="flex justify-between items-center text-xs">
+                                            <span className="text-[10px] uppercase tracking-widest opacity-60">Current Distance</span>
+                                            {synced ? (
+                                              <span className={`font-mono font-bold ${gttDistance <= 0 ? 'text-[#22c55e]' : 'text-amber-500'}`}>
+                                                {formatPercent(gttDistance)} to goal
+                                              </span>
+                                            ) : (
+                                              <span className="text-[10px] italic opacity-50">Waiting for sync</span>
+                                            )}
+                                          </div>
+                                          {synced && (
+                                            <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
+                                              <div 
+                                                className={`h-full rounded-full ${gttDistance <= 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                                                style={{ width: `${Math.min(100, Math.max(5, 100 - Math.abs(gttDistance)))}%` }}
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="h-28 flex items-center justify-center">
+                                        <span className="text-rose-500 text-3xl font-black font-mono tracking-widest">NA</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                </div>
+
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={`p-6 border rounded-2xl space-y-4 shadow-sm ${themeStyles.card}`}>
+                      <div className="flex flex-wrap justify-between items-center gap-4">
+                        <div>
+                          <h3 className="font-extrabold text-lg tracking-tight">System Logs & Ledger</h3>
+                          <p className="text-xs opacity-60">Full chronology of asset operations, buy lots creation, and profile transactions.</p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={exportLogsToCSV}
+                            className="text-xs font-bold bg-slate-100 text-slate-800 hover:bg-slate-200 border border-slate-300 py-1.5 px-3.5 rounded-lg transition flex items-center gap-2"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            <span>Export Ledger (.CSV)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className={`text-slate-600 uppercase tracking-widest text-[9px] border-b ${themeStyles.tableHeader}`}>
+                              <tr>
+                                <th className="py-3 px-4 font-bold">Timestamp</th>
+                                <th className="py-3 px-4 font-bold">Category</th>
+                                <th className="py-3 px-4 font-bold">Log Details</th>
+                                <th className="py-3 px-4 font-bold text-right">Volume</th>
+                                <th className="py-3 px-4 font-bold text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {(activeProfile?.logs ? activeProfile.logs.slice(0, logsLimit) : []).map((log) => (
+                                <tr key={log.id} className="hover:bg-slate-100/50 transition">
+                                  <td className="py-3.5 px-4 font-mono whitespace-nowrap opacity-60">
+                                    {new Date(log.date).toLocaleString()}
+                                  </td>
+                                  <td className="py-3.5 px-4 whitespace-nowrap">
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                                      log.type === 'BUY' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' :
+                                      log.type === 'SELL' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20' :
+                                      'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
+                                    }`}>
+                                      {log.type}
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-4 font-medium">
+                                    {log.text}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right font-mono opacity-80">
+                                    {log.amount ? formatINR(log.amount, true) : "—"}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center">
+                                    {log.type !== "SYSTEM" ? (
+                                      <button
+                                        onClick={() => handleDeleteLog(log.id)}
+                                        className="text-rose-500 hover:text-rose-600 transition p-1 rounded-lg hover:bg-rose-500/10"
+                                        title="Delete this transaction and reverse its financial impact"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-400 font-mono text-[9px] select-none">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {activeProfile?.logs && activeProfile.logs.length > 5 && (
+                        <div className="flex justify-center pt-2">
+                          <button
+                            onClick={() => setLogsLimit(prev => prev === 5 ? activeProfile.logs.length : 5)}
+                            className={`text-xs font-black border py-2 px-6 rounded-xl transition ${themeStyles.buttonMuted}`}
+                          >
+                            {logsLimit === 5 ? `Show All Logs (${activeProfile.logs.length})` : "Collapse Logs List"}
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
+
+                  </div>
+                )}
+
+                {showDebugConsole && (
+                  <div className={`border rounded-2xl p-5 space-y-4 animate-fade-in shadow-lg ${themeStyles.card}`}>
+                    <div className="flex justify-between items-center border-b pb-3 border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full animate-ping" />
+                        <h3 className="font-extrabold text-sm tracking-tight uppercase font-mono">RapidAPI Tracing Panel</h3>
+                      </div>
+                      <button
+                        onClick={() => setShowDebugConsole(false)}
+                        className="opacity-50 hover:opacity-100"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs opacity-60">
+                        Diagnostic tracing panel for structural JSON parsing queries out of active RapidAPI streams.
+                      </p>
+                      
+                      <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 font-mono text-xs overflow-y-auto max-h-64 space-y-3.5 text-slate-300 scrollbar-none">
+                        {apiLogs.length === 0 ? (
+                          <p className="text-slate-500 italic">No live query trace captured yet.</p>
+                        ) : (
+                          apiLogs.map((log) => (
+                            <div key={log.id} className="border-b border-slate-800 pb-3 last:border-0 last:pb-0">
+                              <p className="text-blue-400 font-bold">{log.title}</p>
+                              {log.message && <pre className="mt-1 text-[10px] text-emerald-400 bg-slate-950 p-2 rounded border border-slate-800 whitespace-pre-wrap font-mono">{log.message}</pre>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              </main>
+
+              {/* Excel Bulk Importer Modal */}
+              {showExcelImportModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">Excel Spreadsheet Bulk Importer</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Dump Tabular Trades directly to your Ledger Dashboard</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowExcelImportModal(false);
+                          setShowExcelSuccessScreen(false);
+                          setExcelReport(null);
+                        }}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    {!showExcelSuccessScreen ? (
+                      <form onSubmit={handleExcelImportSubmit} className="p-6 space-y-4">
+                        <div className="text-xs space-y-2 text-slate-400 bg-slate-500/5 p-3 rounded-xl border border-slate-200/20">
+                          <p className="font-bold text-slate-300">Format Expectation:</p>
+                          <p>Paste row cells directly from Google Sheets or Excel. The columns must align to:</p>
+                          <p className="font-mono text-[10px] text-emerald-400 overflow-x-auto whitespace-nowrap bg-slate-950 p-2 rounded border border-slate-800">
+                            Company Name | Symbol | ISIN | Buy/Sell | Qty | Total Amount | Exchange | Order ID | Timestamp | Status
+                          </p>
+                          <div className="flex justify-between items-center pt-2">
+                            <span>Have some test rows ready? Click Load Sample to test.</span>
+                            <button
+                              type="button"
+                              onClick={handleLoadSampleData}
+                              className="text-emerald-500 hover:text-emerald-400 underline font-bold"
+                            >
+                              Load Sample Data
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-wide opacity-75">Paste Spreadsheet Data Block</label>
+                          <textarea
+                            rows="8"
+                            required
+                            placeholder="Paste your cells here..."
+                            value={excelPasteText}
+                            onChange={(e) => setExcelPasteText(e.target.value)}
+                            className={`w-full rounded-xl p-3 text-xs font-mono focus:outline-none ${themeStyles.input}`}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between p-3.5 bg-slate-500/5 border border-slate-200/20 rounded-xl">
+                          <div>
+                            <span className="text-xs font-bold block">Replace Current Portfolio</span>
+                            <span className="text-[10px] opacity-60">Tick this on to wipe active holdings and start a clean state.</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExcelOverwriteMode(!excelOverwriteMode)}
+                            className={`w-12 h-6 rounded-full transition-colors relative flex items-center p-1 ${
+                              excelOverwriteMode ? "bg-rose-500" : "bg-slate-300 dark:bg-slate-700"
+                            }`}
+                          >
+                            <span className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${
+                              excelOverwriteMode ? "translate-x-6" : "translate-x-0"
+                            }`} />
+                          </button>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowExcelImportModal(false)}
+                            className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold py-2.5 px-5 rounded-xl transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="bg-[#22c55e] hover:bg-[#1ebd54] text-white text-xs font-bold py-2.5 px-6 rounded-xl transition shadow-sm"
+                          >
+                            Parse & Process Excel Rows
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="p-6 space-y-5 animate-fade-in">
+                        <div className="text-center space-y-2">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500 mx-auto">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                          <h5 className="text-lg font-black tracking-tight">Spreadsheet Imported Successfully!</h5>
+                          <p className="text-xs text-slate-400">Chronological parser has updated the active profile ledger entries.</p>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                          <div className="p-3 rounded-xl bg-slate-500/5 border border-slate-200/20">
+                            <p className="text-[10px] uppercase tracking-wider font-bold opacity-60">Total Rows</p>
+                            <p className="text-lg font-black font-mono mt-0.5">{excelReport?.totalParsed}</p>
+                          </div>
+                          <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 text-emerald-500">
+                            <p className="text-[10px] uppercase tracking-wider font-bold opacity-60">Success Trades</p>
+                            <p className="text-lg font-black font-mono mt-0.5">{excelReport?.successCount}</p>
+                          </div>
+                          <div className={`p-3 rounded-xl border ${excelReport?.errorCount > 0 ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' : 'bg-slate-500/5 border-slate-200/20'}`}>
+                            <p className="text-[10px] uppercase tracking-wider font-bold opacity-60">Skipped/Warnings</p>
+                            <p className="text-lg font-black font-mono mt-0.5">{excelReport?.errorCount}</p>
+                          </div>
+                        </div>
+
+                        {excelReport?.warnings && excelReport.warnings.length > 0 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-bold uppercase opacity-60 text-amber-500">Inconsistencies Skipped (FIFO Safeguard)</span>
+                            <div className="p-3 bg-amber-500/5 border border-amber-500/20 text-amber-500 text-[11px] rounded-xl font-medium space-y-1 max-h-32 overflow-y-auto pr-1">
+                              {excelReport.warnings.map((warn, i) => (
+                                <p key={i}>• {warn}</p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
+                          <button
+                            onClick={() => {
+                              setShowExcelImportModal(false);
+                              setShowExcelSuccessScreen(false);
+                              setExcelReport(null);
+                              handleManualRefresh();
+                            }}
+                            className="w-full bg-[#22c55e] hover:bg-[#1ebd54] text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 4H18.23" />
+                            </svg>
+                            <span>Trigger Quotes Sync for new Stocks</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setShowExcelImportModal(false);
+                              setShowExcelSuccessScreen(false);
+                              setExcelReport(null);
+                            }}
+                            className="w-full bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 text-xs font-bold py-2.5 rounded-xl transition"
+                          >
+                            Go straight to Dashboard
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              )}
+
+              {/* Realized Sales Breakdown Detail Modal */}
+              {showRealizedSalesModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">Realized Trades Ledger History</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Financial summary of fully or partially sold assets</p>
+                      </div>
+                      <button
+                        onClick={() => setShowRealizedSalesModal(false)}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <div className="p-6 space-y-5">
+                      <div className="flex justify-between items-center p-4 rounded-xl bg-slate-500/5 border border-slate-200/20">
+                        <div>
+                          <p className="text-xs uppercase tracking-wider font-bold opacity-60">Net Realized Profits</p>
+                          <p className={`text-2xl font-black font-mono mt-1 ${activeProfile?.realizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {formatINR(activeProfile?.realizedPnL || 0, true)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs uppercase tracking-wider font-bold opacity-60">Completed Sales Transactions</p>
+                          <p className="text-xl font-extrabold font-mono mt-1">{realizedSales.length} stocks traded</p>
+                        </div>
+                      </div>
+
+                      {realizedSales.length === 0 ? (
+                        <div className="py-12 text-center text-slate-500 italic">
+                          No realized sales recorded yet for this profile.
+                        </div>
+                      ) : (
+                        <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                          <table className="w-full text-left text-xs">
+                            <thead className={`text-slate-600 uppercase tracking-widest text-[9px] border-b ${themeStyles.tableHeader}`}>
+                              <tr>
+                                <th className="py-3 px-4 font-bold">Stock Ticker</th>
+                                <th className="py-3 px-4 font-bold text-right">Gain / Loss Amount</th>
+                                <th className="py-3 px-4 font-bold text-right">Return Rate</th>
+                                <th className="py-3 px-4 font-bold text-center">Trans. Count</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {realizedSales.map((sale) => {
+                                const costBasisOfSold = sale.totalVolume - sale.realizedPnL;
+                                const ratePct = costBasisOfSold > 0 ? (sale.realizedPnL / costBasisOfSold) * 100 : 0;
+                                return (
+                                  <tr key={sale.ticker} className="hover:bg-slate-100/30 transition">
+                                    <td className="py-3.5 px-4 font-black font-mono">{sale.ticker}</td>
+                                    <td className={`py-3.5 px-4 text-right font-mono font-bold ${sale.realizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                      {sale.realizedPnL >= 0 ? '+' : ''}{formatINR(sale.realizedPnL, true)}
+                                    </td>
+                                    <td className={`py-3.5 px-4 text-right font-mono font-black ${sale.realizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                      {formatPercent(ratePct)}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center font-semibold text-slate-400">{sale.salesCount} sales</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      <div className="pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setShowRealizedSalesModal(false)}
+                          className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 px-6 rounded-xl text-xs transition"
+                        >
+                          Close Details
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Stock Modal */}
+              {showEditStockModal && selectedHoldingForEdit && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">Edit Portfolio Configurations: {selectedHoldingForEdit}</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Manage GTT Trigger Rules & Lot Structuring</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowEditStockModal(false);
+                          setSelectedHoldingForEdit(null);
+                        }}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <form onSubmit={saveEditedStock} className="p-6 space-y-6">
+                      
+                      <div className="space-y-3 p-4 bg-slate-500/5 rounded-xl border border-slate-200/50">
+                        <span className="text-xs font-bold uppercase tracking-wide opacity-75">Adjust Target GTT Trigger</span>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase font-bold opacity-60">Sell Limit Price (INR)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="e.g. 2600.00"
+                              value={editingGtt}
+                              onChange={(e) => setEditingGtt(e.target.value)}
+                              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none ${themeStyles.input}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase font-bold opacity-60">Quick Target % (From Avg Price: ₹{
+                              Math.round(editingLots.reduce((acc, lot) => acc + (parseFloat(lot.price) * parseInt(lot.qty, 10) || 0), 0) / 
+                               (editingLots.reduce((acc, lot) => acc + (parseInt(lot.qty, 10) || 0), 0) || 1))
+                            })</label>
+                            
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {[1, 2, 3, 5, 10].map(pct => (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() => {
+                                    const avg = editingLots.reduce((acc, lot) => acc + (parseFloat(lot.price) * parseInt(lot.qty, 10) || 0), 0) / 
+                                                (editingLots.reduce((acc, lot) => acc + (parseInt(lot.qty, 10) || 0), 0) || 1);
+                                    handlePercentGttApply(pct, avg, true);
+                                  }}
+                                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 dark:text-slate-200 dark:bg-slate-800 text-[10px] font-bold px-2 py-1 rounded border border-slate-300 dark:border-slate-700 transition"
+                                >
+                                  +{pct}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase font-bold opacity-60">Custom % Multiplier</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                placeholder="e.g. 15"
+                                value={editCustomGttPercent}
+                                onChange={(e) => setEditCustomGttPercent(e.target.value)}
+                                className={`w-full rounded-xl px-4 py-2 text-xs font-semibold focus:outline-none ${themeStyles.input}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const avg = editingLots.reduce((acc, lot) => acc + (parseFloat(lot.price) * parseInt(lot.qty, 10) || 0), 0) / 
+                                              (editingLots.reduce((acc, lot) => acc + (parseInt(lot.qty, 10) || 0), 0) || 1);
+                                  handlePercentGttApply(parseFloat(editCustomGttPercent), avg, true);
+                                }}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold px-4 rounded-xl transition"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold uppercase tracking-wide opacity-75">Individual Buy Lots</span>
+                          <button
+                            type="button"
+                            onClick={handleAddEditLot}
+                            className="text-[10px] font-bold text-emerald-600 hover:text-emerald-500 flex items-center gap-1"
+                          >
+                            + Add New Lot
+                          </button>
+                        </div>
+
+                        <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                          {editingLots.map((lot, index) => (
+                            <div key={lot.id} className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 ${themeStyles.subCard}`}>
+                              <span className="text-xs font-bold font-mono text-slate-400">#{(index + 1)}</span>
+                              
+                              <div className="flex-1 grid grid-cols-3 gap-2">
+                                <div>
+                                  <input
+                                    type="number"
+                                    required
+                                    placeholder="Qty"
+                                    value={lot.qty}
+                                    onChange={(e) => handleEditLotChange(lot.id, 'qty', e.target.value)}
+                                    className={`w-full rounded-lg px-2.5 py-1 text-xs focus:outline-none ${themeStyles.input}`}
+                                  />
+                                </div>
+                                <div>
+                                  <input
+                                    type="number"
+                                    required
+                                    step="0.01"
+                                    placeholder="Price"
+                                    value={lot.price}
+                                    onChange={(e) => handleEditLotChange(lot.id, 'price', e.target.value)}
+                                    className={`w-full rounded-lg px-2.5 py-1 text-xs focus:outline-none ${themeStyles.input}`}
+                                  />
+                                </div>
+                                <div>
+                                  <input
+                                    type="date"
+                                    required
+                                    value={lot.date}
+                                    onChange={(e) => handleEditLotChange(lot.id, 'date', e.target.value)}
+                                    className={`w-full rounded-lg px-2.5 py-1 text-[11px] focus:outline-none ${themeStyles.input}`}
+                                  />
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEditLot(lot.id)}
+                                className="text-rose-500 hover:text-rose-600 text-xs font-bold px-1"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowEditStockModal(false);
+                            setSelectedHoldingForEdit(null);
+                          }}
+                          className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold py-2.5 px-5 rounded-xl transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="bg-[#22c55e] hover:bg-[#1ebd54] text-white text-xs font-bold py-2.5 px-6 rounded-xl transition shadow-sm"
+                        >
+                          Save Configurations
+                        </button>
+                      </div>
+
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Add Stock Modal */}
+              {showAddStockModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">Log Asset Transaction</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Add new purchase lot with customized GTT Limit Rules</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowAddStockModal(false);
+                          setSearchQuery("");
+                          setSelectedStock(null);
+                        }}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleAddStockSubmit} className="p-6 space-y-4">
+                      
+                      <div className="space-y-1 relative">
+                        <label className="text-xs font-bold uppercase tracking-wide opacity-75">Stock Lookup / Ticker Symbol</label>
+                        <div className="flex gap-2">
+                          <div className="relative flex-grow">
+                            <input
+                              type="text"
+                              placeholder="Type symbol (e.g. RELIANCE, INFY, AAPL)"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none ${themeStyles.input}`}
+                            />
+                            
+                            {suggestions.length > 0 && (
+                              <div className={`absolute top-full left-0 right-0 mt-1 border rounded-xl max-h-48 overflow-y-auto z-50 shadow-2xl divide-y divide-slate-100 ${theme === 'dark' ? 'bg-[#141b29] border-[#1e293b]' : 'bg-white border-slate-300'}`}>
+                                {suggestions.map((stock) => (
+                                  <div
+                                    key={stock.symbol}
+                                    onClick={() => {
+                                      setSelectedStock(stock);
+                                      setSearchQuery(stock.symbol);
+                                      setSuggestions([]);
+                                    }}
+                                    className="p-3 hover:bg-emerald-500/10 cursor-pointer flex justify-between items-center"
+                                  >
+                                    <div>
+                                      <p className="text-xs font-black font-mono">{stock.symbol}</p>
+                                      <p className="text-[10px] opacity-60">{stock.name}</p>
+                                    </div>
+                                    <span className="text-[9px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md uppercase font-bold opacity-60">
+                                      {stock.exchange}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {selectedStock && (
+                          <p className="text-[10px] text-emerald-600 font-bold mt-1">Matched Registry: {selectedStock.name} ({selectedStock.exchange})</p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-wide opacity-75">Buy Quantity</label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            placeholder="e.g. 10"
+                            value={buyQty}
+                            onChange={(e) => setBuyQty(e.target.value)}
+                            className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono ${themeStyles.input}`}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-wide opacity-75">Buy Price (INR)</label>
+                          <input
+                            type="number"
+                            required
+                            min="0.01"
+                            step="0.01"
+                            placeholder="₹ cost basis"
+                            value={buyPrice}
+                            onChange={(e) => setBuyPrice(e.target.value)}
+                            className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono ${themeStyles.input}`}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-wide opacity-75">Purchase Date</label>
+                          <input
+                            type="date"
+                            required
+                            value={buyDate}
+                            onChange={(e) => setBuyDate(e.target.value)}
+                            className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono ${themeStyles.input}`}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 p-3.5 bg-slate-500/5 rounded-xl border border-slate-200/50">
+                        <span className="text-xs font-bold uppercase tracking-wide opacity-75">Configure GTT Target Order</span>
+                        
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] uppercase font-bold opacity-60">Set GTT Target Percentage Trigger</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[1, 2, 3, 5, 10].map(pct => (
+                              <button
+                                key={pct}
+                                type="button"
+                                onClick={() => handlePercentGttApply(pct, buyPrice)}
+                                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 transition"
+                              >
+                                +{pct}%
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase font-bold opacity-60">Custom % Input</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                placeholder="e.g. 15"
+                                value={customGttPercent}
+                                onChange={(e) => setCustomGttPercent(e.target.value)}
+                                className={`w-full rounded-lg px-3 py-1.5 text-xs focus:outline-none ${themeStyles.input}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handlePercentGttApply(parseFloat(customGttPercent), buyPrice)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 rounded-lg transition"
+                              >
+                                Set
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] uppercase font-bold opacity-60">Final Trigger GTT Target</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="₹ trigger target"
+                              value={gttTrigger}
+                              onChange={(e) => setGttTrigger(e.target.value)}
+                              className={`w-full rounded-lg px-3 py-1.5 text-xs focus:outline-none font-semibold ${themeStyles.input}`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAddStockModal(false);
+                            setSearchQuery("");
+                            setSelectedStock(null);
+                          }}
+                          className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold py-2.5 px-5 rounded-xl transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="bg-[#22c55e] hover:bg-[#1ebd54] text-white text-xs font-bold py-2.5 px-6 rounded-xl transition shadow-sm"
+                        >
+                          Log Buy Order
+                        </button>
+                      </div>
+
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Sell Stock Modal */}
+              {showSellStockModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">Log Trade / Sell Order</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Strict chronological first-in first-out calculation engine</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowSellStockModal(false);
+                          setSelectedHoldingForSell(null);
+                        }}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <form onSubmit={executeFifoSell} className="p-6 space-y-4">
+                      <div className={`p-4 rounded-xl border ${themeStyles.subCard}`}>
+                        <span className="text-[10px] uppercase tracking-widest opacity-60 block mb-0.5">Asset Target</span>
+                        <span className="text-lg font-black font-mono">{selectedHoldingForSell}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-wide opacity-75">Qty to Liquidate</label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            placeholder="shares to sell"
+                            value={sellQty}
+                            onChange={(e) => setSellQty(e.target.value)}
+                            className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono ${themeStyles.input}`}
+                          />
+                          <p className="text-[10px] opacity-65">
+                            Max: {activeProfile?.holdings[selectedHoldingForSell]?.buyLots.reduce((acc, l) => acc + l.qty, 0) || 0} shares
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-wide opacity-75">Selling Price (INR)</label>
+                          <input
+                            type="number"
+                            required
+                            min="0.01"
+                            step="0.01"
+                            placeholder="₹ target price"
+                            value={sellPrice}
+                            onChange={(e) => setSellPrice(e.target.value)}
+                            className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono ${themeStyles.input}`}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase tracking-wide opacity-75">Date of Sale</label>
+                        <input
+                          type="date"
+                          required
+                          value={sellDate}
+                          onChange={(e) => setSellDate(e.target.value)}
+                          className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none font-mono ${themeStyles.input}`}
+                        />
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSellStockModal(false);
+                            setSelectedHoldingForSell(null);
+                          }}
+                          className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold py-2.5 px-5 rounded-xl transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold py-2.5 px-6 rounded-xl transition shadow-sm"
+                        >
+                          Execute FIFO Sale
+                        </button>
+                      </div>
+
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Create Profile Modal */}
+              {showProfileCreateModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <h4 className="font-extrabold text-sm uppercase">New Profile Vault</h4>
+                      <button
+                        onClick={() => setShowProfileCreateModal(false)}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleCreateProfile} className="p-6 space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase tracking-wide opacity-75">Owner Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Nikita"
+                          value={newProfileName}
+                          onChange={(e) => setNewProfileName(e.target.value)}
+                          className={`w-full rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none ${themeStyles.input}`}
+                        />
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowProfileCreateModal(false)}
+                          className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold py-2.5 px-4 rounded-xl transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-2.5 px-5 rounded-xl transition"
+                        >
+                          Provision Vault
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Import/Export Modal */}
+              {showImportExportModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">Data Portability Engine</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Import or Export Your Entire Application Local Cache</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowImportExportModal(false);
+                          setImportJsonText("");
+                        }}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <div className="p-6 space-y-5">
+                      
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-bold uppercase tracking-wide opacity-80">Export State Backup</h5>
+                        <p className="text-xs opacity-60">Generate and download a self-contained `.json` snapshot of all created profiles, holdings lots, and trade histories.</p>
+                        <button
+                          type="button"
+                          onClick={handleExportState}
+                          className="w-full bg-[#22c55e] hover:bg-[#1ebd54] text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm"
+                        >
+                          Export & Save JSON Configuration Backup
+                        </button>
+                      </div>
+
+                      <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-3">
+                        <h5 className="text-xs font-bold uppercase tracking-wide opacity-80">Import State Backup</h5>
+                        <p className="text-xs opacity-60">Restore your state by pasting your configuration JSON schema directly below:</p>
+                        <textarea
+                          rows="5"
+                          placeholder='Paste JSON schema containing {"version": "2.0.0", "profiles": [...] }'
+                          value={importJsonText}
+                          onChange={(e) => setImportJsonText(e.target.value)}
+                          className={`w-full rounded-xl p-3 text-xs font-mono focus:outline-none ${themeStyles.input}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleImportState}
+                          className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm"
+                        >
+                          Parse & Restore Local Schema Data
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* RapidAPI Key / Settings Modal */}
+              {showApiSettingsModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-4 border-b flex justify-between items-center ${themeStyles.cardHeader}`}>
+                      <div>
+                        <h4 className="font-extrabold text-base tracking-tight">RapidAPI Market Connection Settings</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60">Enable real-time Yahoo Finance multi-asset sync</p>
+                      </div>
+                      <button
+                        onClick={() => setShowApiSettingsModal(false)}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+
+                    <div className="p-6 space-y-5">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase tracking-wide opacity-75">Your RapidAPI Key ('x-rapidapi-key')</label>
+                        <input
+                          type="password"
+                          placeholder="Paste your RapidAPI key here..."
+                          value={customApiKey}
+                          onChange={(e) => setCustomApiKey(e.target.value)}
+                          className={`w-full rounded-xl px-4 py-3 text-xs font-mono focus:outline-none ${themeStyles.input}`}
+                        />
+                        <p className="text-[11px] opacity-65 leading-relaxed">
+                          Quotes are fetched securely via the <span className="font-semibold text-emerald-500">apidojo-yahoo-finance-v1</span> endpoint. All ticker codes are compiled in batch format to save credit consumption. Key values are saved securely only inside your browser's private local storage.
+                        </p>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200/50 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowApiSettingsModal(false);
+                            showToast("API configurations saved!", "success");
+                          }}
+                          className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 px-6 rounded-xl text-xs transition"
+                        >
+                          Save Settings
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
+              {/* API Error Panel Modal */}
+              {showApiErrorModal && (
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`border rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-scale-up ${themeStyles.card}`}>
+                    
+                    <div className={`px-6 py-5 border-b flex items-center gap-3 ${themeStyles.cardHeader}`}>
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/35 flex items-center justify-center text-amber-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-sm tracking-tight uppercase">API Gateway Sync Details</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-semibold opacity-60 font-mono">Authentication Panel & Exception Controller</p>
+                      </div>
+                    </div>
+
+                    <div className="p-6 space-y-4">
+                      <p className="text-xs opacity-65 leading-relaxed">
+                        If you encounter an issue syncing live prices, make sure your API Key is valid or configure standard credentials inside the drawer. Alternatively, test the application via the local offline simulator below:
+                      </p>
+
+                      <div className="space-y-3 p-4 bg-slate-500/10 rounded-xl border border-slate-300/40">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase tracking-wider block text-amber-500">RapidAPI Key Configuration</label>
+                          <input
+                            type="password"
+                            placeholder="Enter Key"
+                            value={customApiKey}
+                            onChange={(e) => setCustomApiKey(e.target.value)}
+                            className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${themeStyles.input}`}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 font-mono text-[10px] text-rose-400 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                        {apiErrorMessage}
+                      </div>
+
+                      <div className="border-t border-slate-200/50 pt-4 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowApiErrorModal(false);
+                            handleManualRefresh();
+                          }}
+                          className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm"
+                        >
+                          Retry with new settings
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleOfflineSimulatorBypass}
+                          className="w-full bg-[#22c55e] hover:bg-[#1ebd54] text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm"
+                        >
+                          Bypass Sync (Use Offline Simulator Quotes)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowApiErrorModal(false)}
+                          className="w-full bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 text-xs font-bold py-2.5 rounded-xl transition"
+                        >
+                          Dismiss Error Console
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
+              <footer className="border-t py-6 px-6 text-center mt-auto border-slate-200 dark:border-slate-800 bg-transparent opacity-80 text-xs font-semibold tracking-wide">
+                <p>Developed by Arjun Gupta, IRMS (Accounts) 2023 with help of Gemini AI</p>
+              </footer>
+
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
