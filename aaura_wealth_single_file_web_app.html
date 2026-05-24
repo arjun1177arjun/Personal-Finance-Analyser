@@ -344,7 +344,7 @@
               throw new Error("No Gemini API Key found. To fetch live market details on a downloaded app, click the 'API Configuration' button in the top header and enter your free Gemini API Key from Google AI Studio.");
             }
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${resolvedKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${resolvedKey}`;
 
             const systemPrompt = "You are a professional stock valuation parser. Search live data for NSE, BSE, NASDAQ, and NYSE ticker symbols. Output ONLY raw JSON. No markdown backticks, no text wrappers.";
             const userQuery = `Search current live trading price (price) and previous day's close price (prevClose) for these tickers: ${tickers.join(', ')}. Format your response as a valid, parsable raw JSON object with this exact schema:
